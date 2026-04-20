@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import axios from "axios";
 import type { AxiosInstance } from "axios";
-import { withPaymentInterceptor } from "x402-axios";
+import { x402Client, wrapAxiosWithPayment } from "@x402/axios";
+import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { useWallet } from '@/contexts/WalletContext';
 
 
@@ -28,20 +29,39 @@ const baseApiClient = axios.create({
 // This will be dynamically set based on wallet connection
 let apiClient: AxiosInstance = baseApiClient;
 
+// Bridge viem's WalletClient to x402 v2's ClientEvmSigner shape.
+function toX402Signer(walletClient: any) {
+  return {
+    address: walletClient.account.address as `0x${string}`,
+    signTypedData: (msg: {
+      domain: Record<string, unknown>;
+      types: Record<string, unknown>;
+      primaryType: string;
+      message: Record<string, unknown>;
+    }) =>
+      walletClient.signTypedData({
+        account: walletClient.account,
+        domain: msg.domain,
+        types: msg.types,
+        primaryType: msg.primaryType,
+        message: msg.message,
+      }),
+  };
+}
+
 // Update the API client with a wallet
 function updateApiClient(walletClient: any) {
   if (walletClient && walletClient.account) {
     try {
-      // Create axios instance with x402 payment interceptor
-      apiClient = withPaymentInterceptor(baseApiClient, walletClient);
+      const client = new x402Client();
+      registerExactEvmScheme(client, { signer: toX402Signer(walletClient) });
+      apiClient = wrapAxiosWithPayment(baseApiClient, client);
       console.log("💳 API client updated with wallet:", walletClient.account.address);
     } catch (error) {
       console.error("❌ Failed to create x402 payment interceptor:", error);
-      // Fallback to base client if x402 interceptor fails
       apiClient = baseApiClient;
     }
   } else {
-    // No wallet connected - reset to base client
     apiClient = baseApiClient;
     console.log("⚠️ API client reset - no wallet connected");
   }

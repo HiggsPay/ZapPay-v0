@@ -1,7 +1,8 @@
 import axios from "axios";
 import type { AxiosInstance } from "axios";
 import type { WalletClient } from "viem";
-import { withPaymentInterceptor } from "x402-axios";
+import { x402Client, wrapAxiosWithPayment } from "@x402/axios";
+import { registerExactEvmScheme } from "@x402/evm/exact/client";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
@@ -16,14 +17,36 @@ const baseApiClient = axios.create({
 // This will be dynamically set based on wallet connection
 let apiClient: AxiosInstance = baseApiClient;
 
+// Bridge viem's WalletClient to x402 v2's ClientEvmSigner shape.
+function toX402Signer(walletClient: WalletClient) {
+  const address = walletClient.account?.address;
+  if (!address) throw new Error("WalletClient has no account");
+  return {
+    address,
+    signTypedData: (msg: {
+      domain: Record<string, unknown>;
+      types: Record<string, unknown>;
+      primaryType: string;
+      message: Record<string, unknown>;
+    }) =>
+      walletClient.signTypedData({
+        account: walletClient.account!,
+        domain: msg.domain as any,
+        types: msg.types as any,
+        primaryType: msg.primaryType,
+        message: msg.message as any,
+      }),
+  };
+}
+
 // Update the API client with a wallet
 export function updateApiClient(walletClient: WalletClient | null) {
   if (walletClient && walletClient.account) {
-    // Create axios instance with x402 payment interceptor
-    apiClient = withPaymentInterceptor(baseApiClient, walletClient as any);
+    const client = new x402Client();
+    registerExactEvmScheme(client, { signer: toX402Signer(walletClient) });
+    apiClient = wrapAxiosWithPayment(baseApiClient, client);
     console.log("💳 API client updated with wallet:", walletClient.account.address);
   } else {
-    // No wallet connected - reset to base client
     apiClient = baseApiClient;
     console.log("⚠️ API client reset - no wallet connected");
   }

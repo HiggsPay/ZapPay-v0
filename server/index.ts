@@ -2,7 +2,10 @@ import { config } from "dotenv";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
-import { paymentMiddleware, Network, Resource } from "x402-hono";
+import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
+import { HTTPFacilitatorClient } from "@x402/core/server";
+import { registerExactEvmScheme } from "@x402/evm/exact/server";
+import type { Network } from "@x402/core/types";
 import { v4 as uuidv4 } from "uuid";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
@@ -12,10 +15,26 @@ import { recordSuccessfulPayment, recordFailedPayment, extractPaymentAmount, get
 config();
 
 // Configuration from environment variables
-const facilitatorUrl = process.env.FACILITATOR_URL as Resource || "https://x402.org/facilitator";
+const facilitatorUrl = process.env.FACILITATOR_URL || "https://x402.org/facilitator";
 const payTo = process.env.ADDRESS as `0x${string}`;
-const network = (process.env.NETWORK as Network) || "scroll";
+const networkEnv = process.env.NETWORK || "base-sepolia";
 const port = parseInt(process.env.PORT || "3001");
+
+// Map legacy network names to CAIP-2 identifiers required by x402 v2.
+function toCaip2(n: string): Network {
+  const map: Record<string, string> = {
+    "base-sepolia": "eip155:84532",
+    "base": "eip155:8453",
+    "scroll": "eip155:534352",
+    "scroll-sepolia": "eip155:534351",
+    "ethereum": "eip155:1",
+    "sepolia": "eip155:11155111",
+    "solana-devnet": "solana:devnet",
+    "solana": "solana:mainnet",
+  };
+  return (map[n] ?? n) as Network;
+}
+const network: Network = toCaip2(networkEnv);
 
 // Supabase configuration
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -36,7 +55,12 @@ if (!payTo) {
   process.exit(1);
 }
 
-const app = new Hono();
+type AppVariables = {
+  walletAddress?: string;
+  riskAnalysis?: unknown;
+};
+
+const app = new Hono<{ Variables: AppVariables }>();
 
 // Enable CORS for frontend
 app.use("/*", cors({
@@ -149,25 +173,34 @@ app.use("/api/pay/*", async (c, next) => {
 // This blocks high-risk wallets before they can attempt to pay
 app.use("/api/pay/*", walletRiskMiddleware);
 
-// Configure x402 payment middleware with two payment options
+// Configure x402 v2 payment middleware with two payment options.
+// Build a facilitator client + resource server, register the EVM "exact" scheme
+// (wildcard eip155:* so any EVM chain works), then mount the middleware.
+const facilitatorClient = new HTTPFacilitatorClient({ url: facilitatorUrl });
+const resourceServer = new x402ResourceServer(facilitatorClient);
+registerExactEvmScheme(resourceServer);
+
 app.use(
   paymentMiddleware(
-    payTo,
     {
       // 24-hour session access
       "/api/pay/session": {
-        price: "$1.00",
-        network,
+        accepts: [
+          { scheme: "exact", price: "$1.00", network, payTo },
+        ],
+        description: "24-hour session access",
+        mimeType: "application/json",
       },
       // One-time access/payment
       "/api/pay/onetime": {
-        price: "$0.10",
-        network,
+        accepts: [
+          { scheme: "exact", price: "$0.10", network, payTo },
+        ],
+        description: "One-time access",
+        mimeType: "application/json",
       },
     },
-    {
-      url: facilitatorUrl,
-    },
+    resourceServer,
   ),
 );
 
