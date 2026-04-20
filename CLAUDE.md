@@ -50,16 +50,6 @@ npm start                # Run compiled build
 npm run type-check       # TypeScript type checking without emit
 ```
 
-**x402 Packages** (`/x402-packages`):
-```bash
-pnpm build               # Build all packages in monorepo with Turbo
-pnpm lint                # Lint all packages
-pnpm format              # Format all packages
-pnpm lint:check          # Check lint without fixing
-pnpm format:check        # Check formatting without fixing
-pnpm test                # Run tests across all packages
-```
-
 ### Environment Setup
 
 Copy `env.example` to `.env` in root directory:
@@ -93,7 +83,6 @@ ZapPay is a cryptocurrency payment gateway built on the x402 protocol, extended 
 - **merchant-frontend/** - React merchant dashboard (shadcn/ui, Supabase auth)
 - **landing-page/** - Marketing website
 - **analysis-engine/** - Risk analysis and fraud detection service
-- **x402-packages/** - Turbo monorepo with x402 protocol packages
 
 ### x402 Protocol Integration
 
@@ -104,39 +93,52 @@ The x402 protocol enables HTTP 402 payment-gated API endpoints. When a client re
    - `x-402-facilitator` - Facilitator service URL
    - Amount, currency, network details
 
-2. **Client intercepts 402** using x402-axios interceptor:
+2. **Client intercepts 402** using `@x402/axios` (`wrapAxiosWithPayment`):
    - Prompts wallet signature via viem
    - Submits payment to facilitator
    - Retries request with session token
 
-3. **Server validates** session via `paymentMiddleware` from x402-hono
+3. **Server validates** session via `paymentMiddleware` from `@x402/hono`
 
-**Local x402 Packages:**
-- Located in `x402-packages/packages/`
-- Managed with pnpm workspaces and Turbo
-- Includes: `x402-axios`, `x402-hono`, `x402-express`, `x402-fetch`, `x402-next`, `coinbase-x402`, `x402` (core)
-- Linked locally via `file:` protocol in package.json
+**x402 v2 packages (published on npm, no local vendoring):**
+- `@x402/core` — protocol primitives, resource server, facilitator client
+- `@x402/hono` — Hono middleware
+- `@x402/axios` — axios client interceptor
+- `@x402/evm` — EVM scheme implementations (ERC-20 "exact", Permit2, etc.)
+- Install with `npm install` in each package — no workspace or file links
 
 ### Server Architecture (`/server`)
 
-**Stack:** Hono + TypeScript + Supabase + x402-hono
+**Stack:** Hono + TypeScript + Supabase + `@x402/hono`
 
 **Key Files:**
 - `index.ts` - Main server with CORS, logging, route definitions
 
 **Payment Middleware:**
-Applied via `paymentMiddleware` from x402-hono to protect endpoints:
+Build a resource server with the EVM "exact" scheme registered, then mount `paymentMiddleware` with the per-route `accepts` config:
 ```typescript
+import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
+import { HTTPFacilitatorClient } from "@x402/core/server";
+import { registerExactEvmScheme } from "@x402/evm/exact/server";
+
+const facilitatorClient = new HTTPFacilitatorClient({ url: facilitatorUrl });
+const resourceServer = new x402ResourceServer(facilitatorClient);
+registerExactEvmScheme(resourceServer);
+
 app.use(
-  "/api/protected/*",
-  paymentMiddleware({
-    facilitator: facilitatorUrl,
-    payTo,
-    network,
-    amount: "100000000000000", // wei or smallest unit
-  })
+  paymentMiddleware(
+    {
+      "/api/protected/*": {
+        accepts: [{ scheme: "exact", price: "$0.10", network: "eip155:84532", payTo }],
+        description: "Protected endpoint",
+        mimeType: "application/json",
+      },
+    },
+    resourceServer,
+  ),
 );
 ```
+Networks use CAIP-2 identifiers (`eip155:84532` for Base Sepolia). Add more entries to `accepts` to support additional assets (USDT, other ERC-20) or chains.
 
 **Authentication:**
 - JWT tokens from Supabase auth extracted via `Authorization: Bearer <token>` header
@@ -170,7 +172,7 @@ All tables use Row Level Security (RLS) policies scoped by `owner_id = auth.uid(
 
 ### Merchant Frontend Architecture (`/merchant-frontend`)
 
-**Stack:** React 18 + TypeScript + Vite + shadcn/ui + React Router + Supabase + viem + x402-axios
+**Stack:** React 18 + TypeScript + Vite + shadcn/ui + React Router + Supabase + viem + `@x402/axios`
 
 Refer to `merchant-frontend/CLAUDE.md` for detailed architecture (already exists and is comprehensive).
 
@@ -199,16 +201,14 @@ Runs on port 3002 by default, separate from main server.
 ### Important Implementation Notes
 
 **Working with x402 Packages:**
-- x402 packages are linked locally using `file:../x402-packages/packages/<package-name>`
-- Use pnpm in `x402-packages/` directory for dependency management
-- After modifying x402 packages, run `pnpm build` in `x402-packages/`
-- Then reinstall in dependent projects (server, merchant-frontend)
+- x402 v2 packages (`@x402/core`, `@x402/hono`, `@x402/axios`, `@x402/evm`) are installed from npm.
+- To upgrade: bump versions in the `package.json` of `server/`, `merchant-frontend/`, and `client/`, then `npm install` in each.
 
 **Adding Payment-Protected Endpoints:**
-1. Add route in `server/index.ts`
-2. Apply `paymentMiddleware` with appropriate amount
-3. Endpoint automatically returns 402 when no session provided
-4. Client with x402-axios integration handles payment flow automatically
+1. Add a route entry to the `paymentMiddleware` call in `server/index.ts`
+2. Populate `accepts` with one or more `{ scheme, price, network, payTo, asset? }` entries — multiple entries let the client pick between assets/chains
+3. Endpoint automatically returns 402 when no valid payment is provided
+4. Client with `@x402/axios` + `@x402/evm` handles the payment flow automatically
 
 **Database Changes:**
 1. Modify `server/supabase/supabase-migration.sql`
@@ -262,5 +262,4 @@ Runs on port 3002 by default, separate from main server.
 - x402 protocol for payment facilitation
 
 **Monorepo:**
-- Turbo + pnpm workspaces (x402-packages)
 - npm workspaces (root)

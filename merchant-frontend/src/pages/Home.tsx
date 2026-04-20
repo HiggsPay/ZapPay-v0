@@ -84,7 +84,7 @@ export function Home() {
                   />
                   <Tooltip
                     labelFormatter={(value) => new Date(value).toLocaleDateString()}
-                    formatter={(value: number) => [`$${value}`, 'Revenue']}
+                    formatter={(value) => [`$${value}`, 'Revenue']}
                   />
                   <Line
                     type="monotone"

@@ -27,7 +27,7 @@ Copy `.env.example` to `.env` and configure:
 - **React Router** for client-side routing
 - **Supabase** for authentication and database
 - **viem** for Ethereum wallet interactions (Scroll network)
-- **x402-axios** for HTTP 402 payment protocol integration
+- **@x402/axios** + **@x402/evm** for HTTP 402 payment protocol integration (x402 v2)
 
 ### Project Structure
 
@@ -84,7 +84,7 @@ The application uses viem to connect to Ethereum wallets (specifically targeting
 4. API requests automatically include Supabase auth tokens via axios interceptor
 
 **Payment Protocol:**
-The app integrates x402-axios (local package at `../x402-packages/packages/x402-axios`) which intercepts HTTP 402 responses from the backend and automatically handles crypto payments through the connected wallet. This enables seamless paid API access.
+The app integrates `@x402/axios` (published on npm) which intercepts HTTP 402 responses from the backend and automatically handles crypto payments through the connected wallet. Payment schemes are registered via `@x402/evm/exact/client` so any EVM chain (`eip155:*`) works. This enables seamless paid API access.
 
 **State Management:**
 - React Context for global state (auth, wallet)
