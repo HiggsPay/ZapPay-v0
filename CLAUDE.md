@@ -6,9 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Root Level Development
 ```bash
-npm run dev              # Start all services (server + client) concurrently
-npm run install:all      # Install dependencies for all packages
+npm run dev              # Start server only (merchant-frontend, landing-page, analysis-engine, and ml-service must be started separately)
+npm run install:all      # Install deps for root + server only; other services must be installed separately
 ```
+
+To run the full stack locally you need five terminals: `npm run dev` (root), `cd analysis-engine && npm run dev`, `cd ml-service && python -m src.main`, `cd merchant-frontend && npm run dev`, `cd landing-page && npm run dev`.
 
 ### Individual Service Commands
 
@@ -17,13 +19,6 @@ npm run install:all      # Install dependencies for all packages
 npm run dev              # Start with tsx watch on port 3001
 npm run build            # Compile TypeScript
 npm start                # Run compiled build
-```
-
-**Client** (`/client`):
-```bash
-npm run dev              # Start Vite dev server
-npm run build            # TypeScript compile + Vite build
-npm run preview          # Preview production build
 ```
 
 **Merchant Frontend** (`/merchant-frontend`):
@@ -79,7 +74,6 @@ ZapPay is a cryptocurrency payment gateway built on the x402 protocol, extended 
 
 **Core Services:**
 - **server/** - Hono-based backend API with x402 payment middleware
-- **client/** - Browser wallet integration demo (original x402 example)
 - **merchant-frontend/** - React merchant dashboard (shadcn/ui, Supabase auth)
 - **landing-page/** - Marketing website
 - **analysis-engine/** - Risk analysis and fraud detection service
@@ -202,7 +196,7 @@ Runs on port 3002 by default, separate from main server.
 
 **Working with x402 Packages:**
 - x402 v2 packages (`@x402/core`, `@x402/hono`, `@x402/axios`, `@x402/evm`) are installed from npm.
-- To upgrade: bump versions in the `package.json` of `server/`, `merchant-frontend/`, and `client/`, then `npm install` in each.
+- To upgrade: bump versions in the `package.json` of `server/` and `merchant-frontend/`, then `npm install` in each.
 
 **Adding Payment-Protected Endpoints:**
 1. Add a route entry to the `paymentMiddleware` call in `server/index.ts`

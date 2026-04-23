@@ -188,17 +188,7 @@ export function extractPaymentLinkFromContext(c: any): string | null {
       }
     }
 
-    // Try to get from request path
-    const path = c.req.path;
-    console.log('🔍 Request path:', path);
-    const pathMatch = path.match(/\/pay\/([a-z0-9_]+)/i);
-    console.log('🔍 Path match:', pathMatch);
-    if (pathMatch && pathMatch[1]) {
-      console.log(`✅ Extracted payment_link from path: ${pathMatch[1]}`);
-      return pathMatch[1];
-    }
-
-    console.log('⚠️ No payment_link found in header, referrer, or path');
+    console.log('⚠️ No payment_link found in header or referrer');
     return null;
   } catch (error) {
     console.error('❌ Failed to extract payment_link:', error);
@@ -280,11 +270,28 @@ export async function getOwnerIdFromPaymentLink(payment_link_id: string): Promis
 }
 
 /**
- * Get a valid system owner_id (first user in profiles table)
- * For transactions without a specific owner (like blocked payments)
+ * Get owner_id by matching the payTo wallet address in profiles.
+ * Falls back to the first profile if no match found.
+ * For direct payments not via a payment link.
  */
-export async function getSystemOwnerId(): Promise<string | null> {
+export async function getSystemOwnerId(payToAddress?: string): Promise<string | null> {
   try {
+    // If we know the payTo address, find the merchant who owns it
+    if (payToAddress) {
+      const { data, error } = await supabaseAdmin
+        .from('profiles')
+        .select('user_id')
+        .ilike('wallet_address', payToAddress)
+        .limit(1)
+        .single();
+
+      if (!error && data) {
+        console.log(`📝 Found owner by wallet address: ${data.user_id}`);
+        return data.user_id;
+      }
+    }
+
+    // Fallback: first profile
     const { data, error } = await supabaseAdmin
       .from('profiles')
       .select('user_id')
@@ -296,7 +303,7 @@ export async function getSystemOwnerId(): Promise<string | null> {
       return null;
     }
 
-    console.log(`📝 Using system owner_id: ${data.user_id}`);
+    console.log(`📝 Using first profile as owner_id: ${data.user_id}`);
     return data.user_id;
   } catch (error) {
     console.error('❌ Error getting system owner_id:', error);

@@ -5,21 +5,18 @@ import { recordBlockedPayment, extractPaymentAmount, getSystemOwnerId, extractPa
 /**
  * Helper function to extract wallet address from x-payment header
  */
-function extractWalletFromPayment(xPayment: string): string | undefined {
+function extractWalletFromPayment(header: string): string | undefined {
   try {
-    // Decode base64
-    const decoded = Buffer.from(xPayment, 'base64').toString('utf-8');
+    const decoded = Buffer.from(header, 'base64').toString('utf-8');
     const paymentData = JSON.parse(decoded);
-
-    // Extract wallet address from authorization.from field
+    // x402 v2: payload.authorization.from; v1: payload.authorization.from
     const walletAddress = paymentData?.payload?.authorization?.from;
-
     if (walletAddress) {
-      console.log(`📦 Extracted wallet from x-payment: ${walletAddress}`);
+      console.log(`📦 Extracted wallet from payment header: ${walletAddress}`);
       return walletAddress;
     }
   } catch (error) {
-    console.error('❌ Failed to parse x-payment header:', error);
+    console.error('❌ Failed to parse payment header:', error);
   }
   return undefined;
 }
@@ -37,16 +34,15 @@ export async function walletRiskMiddleware(c: Context, next: Next) {
     c.req.header('x-402-from') ||
     c.req.header('x-address');
 
-  // If not found in standard headers, try to extract from x-payment header
+  // x402 v2 uses PAYMENT-SIGNATURE; v1 used X-PAYMENT
   if (!walletAddress) {
-    const xPayment = c.req.header('x-payment');
-    if (xPayment) {
-      walletAddress = extractWalletFromPayment(xPayment);
+    const paymentHeader = c.req.header('payment-signature') || c.req.header('x-payment');
+    if (paymentHeader) {
+      walletAddress = extractWalletFromPayment(paymentHeader);
     }
   }
 
-  // If no wallet address found, let the request through
-  // (it will be handled by x402 middleware or return 402)
+  // No wallet address on the initial 402 challenge request — let x402 middleware handle it
   if (!walletAddress) {
     console.log('⚠️ No wallet address in request headers - skipping risk check');
     return next();
@@ -166,11 +162,11 @@ export async function walletRiskMiddlewareEnhanced(c: Context, next: Next) {
     c.req.header('x-402-from') ||
     c.req.header('x-address');
 
-  // If not in standard headers, try to extract from x-payment header
+  // x402 v2 uses PAYMENT-SIGNATURE; v1 used X-PAYMENT
   if (!walletAddress) {
-    const xPayment = c.req.header('x-payment');
-    if (xPayment) {
-      walletAddress = extractWalletFromPayment(xPayment);
+    const paymentHeader = c.req.header('payment-signature') || c.req.header('x-payment');
+    if (paymentHeader) {
+      walletAddress = extractWalletFromPayment(paymentHeader);
     }
   }
 
@@ -245,11 +241,11 @@ export function createWalletRiskMiddleware(threshold: number) {
       c.req.header('x-402-from') ||
       c.req.header('x-address');
 
-    // If not in standard headers, try to extract from x-payment header
+    // x402 v2 uses PAYMENT-SIGNATURE; v1 used X-PAYMENT
     if (!walletAddress) {
-      const xPayment = c.req.header('x-payment');
-      if (xPayment) {
-        walletAddress = extractWalletFromPayment(xPayment);
+      const paymentHeader = c.req.header('payment-signature') || c.req.header('x-payment');
+      if (paymentHeader) {
+        walletAddress = extractWalletFromPayment(paymentHeader);
       }
     }
 

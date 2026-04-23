@@ -87,7 +87,16 @@ app.use("/*", cors({
     "x-402-amount",
     "x-402-currency",
     "x-402-facilitator",
-    "x-402-version"
+    "x-402-version",
+    "PAYMENT-SIGNATURE",
+    "PAYMENT-REQUIRED",
+    "PAYMENT-RESPONSE",
+  ],
+  exposeHeaders: [
+    "PAYMENT-REQUIRED",
+    "PAYMENT-RESPONSE",
+    "PAYMENT-SIGNATURE",
+    "X-PAYMENT-RESPONSE",
   ],
 }));
 
@@ -149,24 +158,24 @@ app.use("/api/pay/*", async (c, next) => {
   }
   c.header('Access-Control-Allow-Credentials', 'true');
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, access-control-expose-headers, x-402-payment, x-402-session, x-payment, x-payment-link, X-Payment-Link, x-402-token, x-402-signature, x-402-nonce, x-402-timestamp, x-402-address, x-402-chain-id, x-402-network, x-402-amount, x-402-currency, x-402-facilitator, x-402-version');
-  c.header('Access-Control-Expose-Headers', 'X-PAYMENT-RESPONSE');
-  
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, access-control-expose-headers, x-402-payment, x-402-session, x-payment, x-payment-link, X-Payment-Link, x-402-token, x-402-signature, x-402-nonce, x-402-timestamp, x-402-address, x-402-chain-id, x-402-network, x-402-amount, x-402-currency, x-402-facilitator, x-402-version, PAYMENT-SIGNATURE, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
+  c.header('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, PAYMENT-SIGNATURE, X-PAYMENT-RESPONSE');
+
   if (c.req.method === 'OPTIONS') {
     console.log('✅ Handling OPTIONS preflight request');
     return c.text('', 200);
   }
-  
+
   await next();
-  
+
   // Ensure CORS headers are preserved after x402 middleware
   if (origin && allowedOrigins.includes(origin)) {
     c.header('Access-Control-Allow-Origin', origin);
   }
   c.header('Access-Control-Allow-Credentials', 'true');
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, access-control-expose-headers, x-402-payment, x-402-session, x-payment, x-payment-link, X-Payment-Link, x-402-token, x-402-signature, x-402-nonce, x-402-timestamp, x-402-address, x-402-chain-id, x-402-network, x-402-amount, x-402-currency, x-402-facilitator, x-402-version');
-  c.header('Access-Control-Expose-Headers', 'X-PAYMENT-RESPONSE');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, access-control-expose-headers, x-402-payment, x-402-session, x-payment, x-payment-link, X-Payment-Link, x-402-token, x-402-signature, x-402-nonce, x-402-timestamp, x-402-address, x-402-chain-id, x-402-network, x-402-amount, x-402-currency, x-402-facilitator, x-402-version, PAYMENT-SIGNATURE, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
+  c.header('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, PAYMENT-SIGNATURE, X-PAYMENT-RESPONSE');
 });
 
 // Apply wallet risk middleware BEFORE payment processing
@@ -229,25 +238,34 @@ app.use("/*", cors({
     "x-402-amount",
     "x-402-currency",
     "x-402-facilitator",
-    "x-402-version"
+    "x-402-version",
+    "PAYMENT-SIGNATURE",
+    "PAYMENT-REQUIRED",
+    "PAYMENT-RESPONSE",
+  ],
+  exposeHeaders: [
+    "PAYMENT-REQUIRED",
+    "PAYMENT-RESPONSE",
+    "PAYMENT-SIGNATURE",
+    "X-PAYMENT-RESPONSE",
   ],
 }));
 
 // Add a global response interceptor to ensure CORS headers are always present
 app.use("/*", async (c, next) => {
   await next();
-  
+
   // Ensure CORS headers are present on all responses
   const origin = c.req.header('Origin');
   const allowedOrigins = ["http://localhost:5173", "http://localhost:3000", "http://localhost:5174"];
-  
+
   if (origin && allowedOrigins.includes(origin)) {
     c.header('Access-Control-Allow-Origin', origin);
   }
   c.header('Access-Control-Allow-Credentials', 'true');
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, access-control-expose-headers, x-402-payment, x-402-session, x-payment, x-payment-link, X-Payment-Link, x-402-token, x-402-signature, x-402-nonce, x-402-timestamp, x-402-address, x-402-chain-id, x-402-network, x-402-amount, x-402-currency, x-402-facilitator, x-402-version');
-  c.header('Access-Control-Expose-Headers', 'X-PAYMENT-RESPONSE');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, access-control-expose-headers, x-402-payment, x-402-session, x-payment, x-payment-link, X-Payment-Link, x-402-token, x-402-signature, x-402-nonce, x-402-timestamp, x-402-address, x-402-chain-id, x-402-network, x-402-amount, x-402-currency, x-402-facilitator, x-402-version, PAYMENT-SIGNATURE, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
+  c.header('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, PAYMENT-SIGNATURE, X-PAYMENT-RESPONSE');
 });
 
 // Free endpoint - health check
@@ -323,19 +341,16 @@ app.post("/api/pay/session", async (c) => {
 
     // Record successful transaction
     try {
-      const walletAddress = c.get('walletAddress') || c.req.header('x-402-address');
-      const xPayment = c.req.header('x-payment');
-
-      let amount = 1.0; // Default $1.00
-      let currency = 'USD';
-
-      if (xPayment) {
-        const paymentData = extractPaymentAmount(xPayment);
-        amount = paymentData.amount || 1.0;
-        currency = paymentData.currency || 'USD';
+      // x402 v2 sends payment-signature; extract wallet from it
+      const paymentHeader = c.req.header('payment-signature') || c.req.header('x-payment');
+      let walletAddress: string | undefined;
+      if (paymentHeader) {
+        try {
+          const decoded = JSON.parse(Buffer.from(paymentHeader, 'base64').toString('utf-8'));
+          walletAddress = decoded?.payload?.authorization?.from;
+        } catch {}
       }
 
-      // Try to extract payment_link from referrer
       const paymentLinkHash = extractPaymentLinkFromContext(c);
       let payment_link_id: string | undefined;
       let owner_id: string | null = null;
@@ -348,19 +363,18 @@ app.post("/api/pay/session", async (c) => {
         }
       }
 
-      // Fallback to system owner if no payment link found
       if (!owner_id) {
-        owner_id = await getSystemOwnerId();
+        owner_id = await getSystemOwnerId(payTo);
       }
 
       if (owner_id) {
         await recordSuccessfulPayment({
           owner_id,
           payment_link_id,
-          amount,
-          currency,
-          crypto_amount: amount, // Set crypto_amount = amount
-          crypto_currency: 'USDC', // Always USDC
+          amount: 1.0,
+          currency: 'USD',
+          crypto_amount: 1.0,
+          crypto_currency: 'USDC',
           wallet_address: walletAddress,
           session_id: sessionId,
         });
@@ -369,7 +383,6 @@ app.post("/api/pay/session", async (c) => {
       }
     } catch (recordError: any) {
       console.error('❌ Failed to record successful transaction:', recordError.message);
-      // Don't fail the payment if recording fails
     }
 
     return c.json({
@@ -386,45 +399,6 @@ app.post("/api/pay/session", async (c) => {
     });
   } catch (error: any) {
     console.error('❌ Payment failed:', error);
-
-    // Record failed transaction
-    try {
-      const walletAddress = c.get('walletAddress') || c.req.header('x-402-address');
-
-      // Try to extract payment_link from referrer
-      const paymentLinkHash = extractPaymentLinkFromContext(c);
-      let payment_link_id: string | undefined;
-      let owner_id: string | null = null;
-
-      if (paymentLinkHash) {
-        const linkData = await getPaymentLinkData(paymentLinkHash);
-        if (linkData) {
-          payment_link_id = linkData.id;
-          owner_id = linkData.owner_id;
-        }
-      }
-
-      // Fallback to system owner if no payment link found
-      if (!owner_id) {
-        owner_id = await getSystemOwnerId();
-      }
-
-      if (owner_id) {
-        await recordFailedPayment({
-          owner_id,
-          payment_link_id,
-          amount: 1.0,
-          currency: 'USD',
-          crypto_amount: 1.0, // Set crypto_amount = amount
-          crypto_currency: 'USDC', // Always USDC
-          wallet_address: walletAddress,
-          block_reason: error.message,
-        });
-      }
-    } catch (recordError) {
-      console.error('❌ Failed to record failed transaction:', recordError);
-    }
-
     return c.json({
       success: false,
       error: 'Payment failed',
@@ -451,19 +425,16 @@ app.post("/api/pay/onetime", async (c) => {
 
     // Record successful transaction
     try {
-      const walletAddress = c.get('walletAddress') || c.req.header('x-402-address');
-      const xPayment = c.req.header('x-payment');
-
-      let amount = 0.10; // Default $0.10
-      let currency = 'USD';
-
-      if (xPayment) {
-        const paymentData = extractPaymentAmount(xPayment);
-        amount = paymentData.amount || 0.10;
-        currency = paymentData.currency || 'USD';
+      // x402 v2 sends payment-signature; extract wallet from it
+      const paymentHeader = c.req.header('payment-signature') || c.req.header('x-payment');
+      let walletAddress: string | undefined;
+      if (paymentHeader) {
+        try {
+          const decoded = JSON.parse(Buffer.from(paymentHeader, 'base64').toString('utf-8'));
+          walletAddress = decoded?.payload?.authorization?.from;
+        } catch {}
       }
 
-      // Try to extract payment_link from referrer
       const paymentLinkHash = extractPaymentLinkFromContext(c);
       let payment_link_id: string | undefined;
       let owner_id: string | null = null;
@@ -476,19 +447,18 @@ app.post("/api/pay/onetime", async (c) => {
         }
       }
 
-      // Fallback to system owner if no payment link found
       if (!owner_id) {
-        owner_id = await getSystemOwnerId();
+        owner_id = await getSystemOwnerId(payTo);
       }
 
       if (owner_id) {
         await recordSuccessfulPayment({
           owner_id,
           payment_link_id,
-          amount,
-          currency,
-          crypto_amount: amount, // Set crypto_amount = amount
-          crypto_currency: 'USDC', // Always USDC
+          amount: 0.10,
+          currency: 'USD',
+          crypto_amount: 0.10,
+          crypto_currency: 'USDC',
           wallet_address: walletAddress,
           session_id: sessionId,
         });
@@ -497,7 +467,6 @@ app.post("/api/pay/onetime", async (c) => {
       }
     } catch (recordError: any) {
       console.error('❌ Failed to record successful transaction:', recordError.message);
-      // Don't fail the payment if recording fails
     }
 
     return c.json({
@@ -513,45 +482,6 @@ app.post("/api/pay/onetime", async (c) => {
     });
   } catch (error: any) {
     console.error('❌ Payment failed:', error);
-
-    // Record failed transaction
-    try {
-      const walletAddress = c.get('walletAddress') || c.req.header('x-402-address');
-
-      // Try to extract payment_link from referrer
-      const paymentLinkHash = extractPaymentLinkFromContext(c);
-      let payment_link_id: string | undefined;
-      let owner_id: string | null = null;
-
-      if (paymentLinkHash) {
-        const linkData = await getPaymentLinkData(paymentLinkHash);
-        if (linkData) {
-          payment_link_id = linkData.id;
-          owner_id = linkData.owner_id;
-        }
-      }
-
-      // Fallback to system owner if no payment link found
-      if (!owner_id) {
-        owner_id = await getSystemOwnerId();
-      }
-
-      if (owner_id) {
-        await recordFailedPayment({
-          owner_id,
-          payment_link_id,
-          amount: 0.10,
-          currency: 'USD',
-          crypto_amount: 0.10, // Set crypto_amount = amount
-          crypto_currency: 'USDC', // Always USDC
-          wallet_address: walletAddress,
-          block_reason: error.message,
-        });
-      }
-    } catch (recordError) {
-      console.error('❌ Failed to record failed transaction:', recordError);
-    }
-
     return c.json({
       success: false,
       error: 'Payment failed',
