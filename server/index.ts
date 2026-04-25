@@ -5,12 +5,17 @@ import { cors } from "hono/cors";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { registerExactEvmScheme } from "@x402/evm/exact/server";
+import { registerExactSvmScheme } from "@x402/svm/exact/server";
+import { ExactStellarScheme } from "@x402/stellar/exact/server";
 import type { Network } from "@x402/core/types";
+import { createDynamicPaymentMiddleware, invalidateCache } from "./middleware/dynamicPaymentMiddleware";
+import { getTokenConfig, SUPPORTED_TOKENS } from "./tokenRegistry";
 import { v4 as uuidv4 } from "uuid";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { walletRiskMiddleware } from "./middleware/walletRiskMiddleware";
-import { recordSuccessfulPayment, recordFailedPayment, extractPaymentAmount, getSystemOwnerId, extractPaymentLinkFromContext, getPaymentLinkData } from "./services/transactionService";
+import { recordSuccessfulPayment, recordFailedPayment, extractPaymentAmount, getSystemOwnerId, extractPaymentLinkFromContext, getPaymentLinkData, updateTransactionBySessionId } from "./services/transactionService";
+import { startConfirmationPoller } from "./services/confirmationPoller";
 
 config();
 
@@ -58,6 +63,7 @@ if (!payTo) {
 type AppVariables = {
   walletAddress?: string;
   riskAnalysis?: unknown;
+  lastSessionId?: string;
 };
 
 const app = new Hono<{ Variables: AppVariables }>();
@@ -188,30 +194,31 @@ app.use("/api/pay/*", walletRiskMiddleware);
 const facilitatorClient = new HTTPFacilitatorClient({ url: facilitatorUrl });
 const resourceServer = new x402ResourceServer(facilitatorClient);
 registerExactEvmScheme(resourceServer);
+registerExactSvmScheme(resourceServer);
+resourceServer.register("stellar:*", new ExactStellarScheme());
 
-app.use(
-  paymentMiddleware(
-    {
-      // 24-hour session access
-      "/api/pay/session": {
-        accepts: [
-          { scheme: "exact", price: "$1.00", network, payTo },
-        ],
-        description: "24-hour session access",
-        mimeType: "application/json",
-      },
-      // One-time access/payment
-      "/api/pay/onetime": {
-        accepts: [
-          { scheme: "exact", price: "$0.10", network, payTo },
-        ],
-        description: "One-time access",
-        mimeType: "application/json",
-      },
-    },
-    resourceServer,
-  ),
-);
+app.use("/api/pay/session", createDynamicPaymentMiddleware("/api/pay/session", "$1.00", resourceServer, supabaseAdmin));
+app.use("/api/pay/onetime", createDynamicPaymentMiddleware("/api/pay/onetime", "$0.10", resourceServer, supabaseAdmin));
+
+// Post-settlement interceptors: read PAYMENT-RESPONSE header after x402 middleware sets it
+// (the header is only available after next() returns, not inside the route handler)
+async function captureSettlementData(c: any): Promise<void> {
+  if (c.res.status >= 400) return;
+  const raw = c.res.headers.get('PAYMENT-RESPONSE');
+  if (!raw) return;
+  try {
+    const settle = JSON.parse(Buffer.from(raw, 'base64').toString('utf-8'));
+    if (!settle?.success || !settle?.transaction) return;
+    const sessionId = c.get('lastSessionId');
+    if (!sessionId) return;
+    await updateTransactionBySessionId(sessionId, settle.transaction, settle.network, settle.payer);
+  } catch (err: any) {
+    console.error('❌ captureSettlementData error:', err.message);
+  }
+}
+
+app.use("/api/pay/session",  async (c, next) => { await next(); await captureSettlementData(c); });
+app.use("/api/pay/onetime",  async (c, next) => { await next(); await captureSettlementData(c); });
 
 // Apply CORS to all other routes
 app.use("/*", cors({
@@ -266,6 +273,84 @@ app.use("/*", async (c, next) => {
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, access-control-expose-headers, x-402-payment, x-402-session, x-payment, x-payment-link, X-Payment-Link, x-402-token, x-402-signature, x-402-nonce, x-402-timestamp, x-402-address, x-402-chain-id, x-402-network, x-402-amount, x-402-currency, x-402-facilitator, x-402-version, PAYMENT-SIGNATURE, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
   c.header('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, PAYMENT-SIGNATURE, X-PAYMENT-RESPONSE');
+});
+
+// Token registry for frontend
+app.get("/api/payment-config/supported", (c) => {
+  return c.json({ supported: SUPPORTED_TOKENS });
+});
+
+// Get merchant's current payment config
+app.get("/api/payment-config", async (c) => {
+  const userId = await getUserIdFromToken(c);
+  if (!userId) return c.json({ error: "Authentication required" }, 401);
+  const { data, error } = await supabaseAdmin
+    .from("merchant_payment_configs")
+    .select("*")
+    .eq("owner_id", userId);
+  if (error) return c.json({ error: "DB error" }, 500);
+  return c.json({ success: true, configs: data });
+});
+
+// Replace merchant's full payment config
+app.put("/api/payment-config", async (c) => {
+  const userId = await getUserIdFromToken(c);
+  if (!userId) return c.json({ error: "Authentication required" }, 401);
+  const body = await c.req.json() as { configs: Array<{ chain_id: string; token_symbol: string }> };
+  const { configs } = body;
+  if (!Array.isArray(configs)) return c.json({ error: "configs must be an array" }, 400);
+  for (const entry of configs) {
+    if (!getTokenConfig(entry.chain_id, entry.token_symbol))
+      return c.json({ error: `Unsupported: ${entry.chain_id}/${entry.token_symbol}` }, 400);
+  }
+  await supabaseAdmin.from("merchant_payment_configs").delete().eq("owner_id", userId);
+  if (configs.length > 0) {
+    const rows = configs.map(entry => {
+      const token = getTokenConfig(entry.chain_id, entry.token_symbol)!;
+      return { owner_id: userId, chain_id: entry.chain_id, token_symbol: entry.token_symbol, asset: token.asset, enabled: true };
+    });
+    const { error } = await supabaseAdmin.from("merchant_payment_configs").insert(rows);
+    if (error) return c.json({ error: "DB error" }, 500);
+  }
+  invalidateCache(userId);
+  return c.json({ success: true });
+});
+
+// Save EVM wallet address
+app.put("/api/profile/wallet", async (c) => {
+  const userId = await getUserIdFromToken(c);
+  if (!userId) return c.json({ error: "Authentication required" }, 401);
+  const { wallet_address } = await c.req.json();
+  if (!wallet_address?.match(/^0x[0-9a-fA-F]{40}$/))
+    return c.json({ error: "Invalid Ethereum address" }, 400);
+  const { error } = await supabaseAdmin.from("profiles").update({ wallet_address }).eq("user_id", userId);
+  if (error) return c.json({ error: "DB error" }, 500);
+  invalidateCache(userId);
+  return c.json({ success: true });
+});
+
+// Save Solana wallet address
+app.put("/api/profile/solana-wallet", async (c) => {
+  const userId = await getUserIdFromToken(c);
+  if (!userId) return c.json({ error: "Authentication required" }, 401);
+  const { solana_wallet_address } = await c.req.json();
+  if (!solana_wallet_address) return c.json({ error: "solana_wallet_address required" }, 400);
+  const { error } = await supabaseAdmin.from("profiles").update({ solana_wallet_address }).eq("user_id", userId);
+  if (error) return c.json({ error: "DB error" }, 500);
+  invalidateCache(userId);
+  return c.json({ success: true });
+});
+
+// Save Stellar wallet address
+app.put("/api/profile/stellar-wallet", async (c) => {
+  const userId = await getUserIdFromToken(c);
+  if (!userId) return c.json({ error: "Authentication required" }, 401);
+  const { stellar_wallet_address } = await c.req.json();
+  if (!stellar_wallet_address) return c.json({ error: "stellar_wallet_address required" }, 400);
+  const { error } = await supabaseAdmin.from("profiles").update({ stellar_wallet_address }).eq("user_id", userId);
+  if (error) return c.json({ error: "DB error" }, 500);
+  invalidateCache(userId);
+  return c.json({ success: true });
 });
 
 // Free endpoint - health check
@@ -338,6 +423,7 @@ app.post("/api/pay/session", async (c) => {
     };
 
     sessions.set(sessionId, session);
+    c.set('lastSessionId', sessionId);
 
     // Record successful transaction
     try {
@@ -422,6 +508,7 @@ app.post("/api/pay/onetime", async (c) => {
     };
 
     sessions.set(sessionId, session);
+    c.set('lastSessionId', sessionId);
 
     // Record successful transaction
     try {
@@ -908,7 +995,7 @@ app.get("/api/transactions", async (c) => {
     }
 
     // Get query parameters for filtering and pagination
-    const status = c.req.query('status'); // 'completed', 'pending', 'failed', 'cancelled'
+    const status = c.req.query('status'); // 'pending', 'processing', 'completed', 'failed', 'blocked', 'cancelled'
     const limit = parseInt(c.req.query('limit') || '50');
     const offset = parseInt(c.req.query('offset') || '0');
 
@@ -943,12 +1030,14 @@ app.get("/api/transactions", async (c) => {
 
     const stats = {
       total: allTransactions?.length || 0,
+      processing: allTransactions?.filter(t => t.status === 'processing').length || 0,
       completed: allTransactions?.filter(t => t.status === 'completed').length || 0,
       pending: allTransactions?.filter(t => t.status === 'pending').length || 0,
       failed: allTransactions?.filter(t => t.status === 'failed').length || 0,
+      blocked: allTransactions?.filter(t => t.status === 'blocked').length || 0,
       cancelled: allTransactions?.filter(t => t.status === 'cancelled').length || 0,
       totalAmount: allTransactions
-        ?.filter(t => t.status === 'completed')
+        ?.filter(t => t.status === 'processing')
         .reduce((sum, t) => sum + (t.amount || 0), 0) || 0,
     };
 
@@ -988,6 +1077,12 @@ console.log(`
 💬 Get help: https://discord.gg/invite/cdp
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
+
+const stopPoller = startConfirmationPoller(
+  parseInt(process.env.POLL_INTERVAL_MS ?? '15000')
+);
+process.on('SIGTERM', () => { stopPoller(); process.exit(0); });
+process.on('SIGINT',  () => { stopPoller(); process.exit(0); });
 
 serve({
   fetch: app.fetch,

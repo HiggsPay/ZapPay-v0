@@ -15,6 +15,7 @@ import { ZapPayUI } from '@/pages/ZapPayUI';
 import { Auth } from '@/pages/Auth';
 import { RequireAuth } from '@/components/RequireAuth';
 import { ApiKey } from '@/pages/ApiKey';
+import { Settings } from '@/pages/Settings';
 import { WalletProvider } from '@/contexts/WalletContext';
 import './App.css';
 
@@ -36,6 +37,7 @@ function App() {
             <Route path="reporting" element={<Reporting />} />
             <Route path="terminal" element={<Terminal />} />
             <Route path="billing" element={<Billing />} />
+            <Route path="settings" element={<Settings />} />
             </Route>
           </Route>
           <Route path="/auth" element={<Auth />} />

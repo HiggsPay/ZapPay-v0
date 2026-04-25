@@ -51,11 +51,12 @@ const navigation: NavigationItem[] = [
   { name: 'Customers', href: '/customers', icon: Users, demo: true },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Payment Links', href: '/payment-links', icon: Link },
-  { name: 'Plugins', href: '/plugins', icon: Puzzle },
+  { name: 'Plugins', href: '/plugins', icon: Puzzle, comingSoon: true },
   { name: 'Radar', href: '/radar', icon: Shield, comingSoon: true },
   { name: 'Analytics', href: '/reporting', icon: BarChart3, comingSoon: true },
   { name: 'Terminal', href: '/terminal', icon: Monitor, comingSoon: true },
   { name: 'Billing', href: '/billing', icon: Receipt, comingSoon: true },
+  { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
 interface SidebarProps {
@@ -168,7 +169,7 @@ export function Sidebar({ className }: SidebarProps) {
             
             <DropdownMenuSeparator />
             
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/settings')}>
               <Settings className="mr-2 h-4 w-4" />
               <span>Settings</span>
             </DropdownMenuItem>

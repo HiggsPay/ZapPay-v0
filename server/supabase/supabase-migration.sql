@@ -4,6 +4,7 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Safety: drop tables if they exist (order respects FKs)
+DROP TABLE IF EXISTS merchant_payment_configs CASCADE;
 DROP TABLE IF EXISTS payment_links CASCADE;
 DROP TABLE IF EXISTS transactions CASCADE;
 DROP TABLE IF EXISTS balances CASCADE;
@@ -19,6 +20,9 @@ CREATE TABLE IF NOT EXISTS profiles (
   display_name TEXT,
   api_key TEXT UNIQUE,
   api_key_created_at TIMESTAMP WITH TIME ZONE,
+  wallet_address TEXT,
+  solana_wallet_address TEXT,
+  stellar_wallet_address TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -72,13 +76,26 @@ CREATE TABLE IF NOT EXISTS balances (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Merchant payment configs (multichain/multi-token acceptance)
+CREATE TABLE IF NOT EXISTS merchant_payment_configs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id     UUID NOT NULL,
+  chain_id     TEXT NOT NULL,
+  token_symbol TEXT NOT NULL,
+  asset        TEXT,
+  enabled      BOOLEAN NOT NULL DEFAULT true,
+  created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (owner_id, chain_id, token_symbol)
+);
+
 -- Transactions
 CREATE TABLE IF NOT EXISTS transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_id UUID NOT NULL,
   payment_link_id UUID REFERENCES payment_links(id) ON DELETE SET NULL,
   type TEXT CHECK (type IN ('payment','withdrawal','deposit')) NOT NULL,
-  status TEXT CHECK (status IN ('pending','completed','failed','cancelled')) NOT NULL,
+  status TEXT CHECK (status IN ('pending','processing','completed','failed','blocked','cancelled')) NOT NULL,
   amount DECIMAL(12,2) NOT NULL,
   currency TEXT NOT NULL,
   crypto_amount DECIMAL(38, 18),
@@ -99,6 +116,9 @@ END;
 $$ language 'plpgsql';
 
 -- Triggers
+CREATE TRIGGER trg_merchant_payment_configs_updated
+BEFORE UPDATE ON merchant_payment_configs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER trg_products_updated
 BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -109,14 +129,23 @@ CREATE TRIGGER trg_payment_links_updated
 BEFORE UPDATE ON payment_links FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Indexes
+CREATE INDEX IF NOT EXISTS idx_merchant_payment_configs_owner ON merchant_payment_configs(owner_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_wallet ON profiles(wallet_address);
 CREATE INDEX IF NOT EXISTS idx_products_owner ON products(owner_id);
 CREATE INDEX IF NOT EXISTS idx_customers_owner ON customers(owner_id);
 CREATE INDEX IF NOT EXISTS idx_payment_links_owner ON payment_links(owner_id);
 CREATE INDEX IF NOT EXISTS idx_balances_owner ON balances(owner_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_owner ON transactions(owner_id);
+
+-- Additive: on-chain confirmation support
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS network TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS wallet_address TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS session_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_transactions_processing ON transactions(created_at) WHERE status = 'processing';
 CREATE INDEX IF NOT EXISTS idx_payment_links_link ON payment_links(payment_link);
 
 -- RLS
+ALTER TABLE merchant_payment_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
@@ -143,6 +172,10 @@ ALTER TABLE balances
 
 ALTER TABLE transactions
   ADD CONSTRAINT fk_transactions_owner
+  FOREIGN KEY (owner_id) REFERENCES profiles(user_id) ON DELETE CASCADE;
+
+ALTER TABLE merchant_payment_configs
+  ADD CONSTRAINT fk_merchant_payment_configs_owner
   FOREIGN KEY (owner_id) REFERENCES profiles(user_id) ON DELETE CASCADE;
 
 -- Policies: owner-scoped using profiles.user_id = auth.uid()
@@ -182,6 +215,10 @@ CREATE POLICY balances_modify ON balances FOR ALL USING ( is_owner(owner_id) ) W
 -- Transactions
 CREATE POLICY transactions_select ON transactions FOR SELECT USING ( is_owner(owner_id) );
 CREATE POLICY transactions_modify ON transactions FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
+
+-- Merchant Payment Configs
+CREATE POLICY mpc_select ON merchant_payment_configs FOR SELECT USING ( is_owner(owner_id) );
+CREATE POLICY mpc_modify ON merchant_payment_configs FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
 
 -- API key generation on profiles
 CREATE OR REPLACE FUNCTION generate_profile_api_key()

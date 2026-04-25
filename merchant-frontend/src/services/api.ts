@@ -155,9 +155,61 @@ export const api = {
     console.log("✅ Risk analysis fetched:", response.data);
     return response.data;
   },
+
+  // Payment config
+  getSupportedTokens: async (): Promise<{ supported: TokenConfig[] }> => {
+    const res = await apiClient.get("/api/payment-config/supported");
+    return res.data;
+  },
+
+  getPaymentConfig: async (): Promise<{ success: boolean; configs: MerchantPaymentConfig[] }> => {
+    const res = await apiClient.get("/api/payment-config");
+    return res.data;
+  },
+
+  updatePaymentConfig: async (configs: Array<{ chain_id: string; token_symbol: string }>) => {
+    const res = await apiClient.put("/api/payment-config", { configs });
+    return res.data;
+  },
+
+  updateWalletAddress: async (wallet_address: string) => {
+    const res = await apiClient.put("/api/profile/wallet", { wallet_address });
+    return res.data;
+  },
+
+  updateSolanaWalletAddress: async (solana_wallet_address: string) => {
+    const res = await apiClient.put("/api/profile/solana-wallet", { solana_wallet_address });
+    return res.data;
+  },
+
+  updateStellarWalletAddress: async (stellar_wallet_address: string) => {
+    const res = await apiClient.put("/api/profile/stellar-wallet", { stellar_wallet_address });
+    return res.data;
+  },
 };
 
 // Types for API responses
+export interface TokenConfig {
+  chainId: string;
+  chainName: string;
+  chainFamily: string;
+  network: string;
+  tokenSymbol: string;
+  tokenName: string;
+  asset: string;
+  decimals: number;
+  isTestnet: boolean;
+}
+
+export interface MerchantPaymentConfig {
+  id: string;
+  owner_id: string;
+  chain_id: string;
+  token_symbol: string;
+  asset: string | null;
+  enabled: boolean;
+}
+
 export interface PaymentOption {
   name: string;
   endpoint: string;
@@ -219,7 +271,7 @@ export interface Transaction {
   owner_id: string;
   payment_link_id?: string;
   type: 'payment' | 'withdrawal' | 'deposit';
-  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'blocked' | 'cancelled';
   amount: number;
   currency: string;
   crypto_amount?: number;
@@ -233,9 +285,11 @@ export interface Transaction {
 
 export interface TransactionStats {
   total: number;
+  processing: number;
   completed: number;
   pending: number;
   failed: number;
+  blocked: number;
   cancelled: number;
   totalAmount: number;
 }

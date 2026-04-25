@@ -17,9 +17,11 @@ export function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [stats, setStats] = useState<TransactionStats>({
     total: 0,
+    processing: 0,
     completed: 0,
     pending: 0,
     failed: 0,
+    blocked: 0,
     cancelled: 0,
     totalAmount: 0,
   });
@@ -60,34 +62,30 @@ export function Transactions() {
   // Map UI status to database status
   const mapStatusToDbStatus = (uiStatus: string): string => {
     switch (uiStatus) {
-      case 'succeeded':
-        return 'completed';
-      case 'refunded':
-        return 'cancelled';
-      case 'disputed':
-        return 'failed';
-      case 'failed':
-        return 'failed';
-      case 'uncaptured':
-        return 'pending';
-      default:
-        return uiStatus;
+      case 'processing': return 'processing';
+      case 'blocked':    return 'blocked';
+      case 'failed':     return 'failed';
+      case 'pending':    return 'pending';
+      case 'cancelled':  return 'cancelled';
+      // Legacy Stripe-style labels kept as fallback
+      case 'succeeded':  return 'processing';
+      case 'refunded':   return 'cancelled';
+      case 'disputed':   return 'failed';
+      case 'uncaptured': return 'pending';
+      default:           return uiStatus;
     }
   };
 
   // Map database status to UI label
   const mapDbStatusToLabel = (dbStatus: string): string => {
     switch (dbStatus) {
-      case 'completed':
-        return 'Succeeded';
-      case 'pending':
-        return 'Pending';
-      case 'failed':
-        return 'Failed';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return dbStatus;
+      case 'processing': return 'Processing';
+      case 'completed':  return 'Completed';
+      case 'pending':    return 'Pending';
+      case 'failed':     return 'Failed';
+      case 'blocked':    return 'Blocked';
+      case 'cancelled':  return 'Cancelled';
+      default:           return dbStatus.charAt(0).toUpperCase() + dbStatus.slice(1);
     }
   };
 
@@ -140,73 +138,29 @@ export function Transactions() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <Card
-          className={`border-2 cursor-pointer hover:shadow-md transition-shadow ${selectedStatus === 'all' ? 'border-orange-200 bg-orange-50' : 'border border-gray-200'}`}
-          onClick={() => setSelectedStatus('all')}
-        >
-          <CardContent className="p-4">
-            <div className="text-center">
-              <p className={`text-sm font-medium ${selectedStatus === 'all' ? 'text-orange-700' : 'text-gray-600'}`}>All</p>
-              <p className={`text-2xl font-bold ${selectedStatus === 'all' ? 'text-orange-900' : 'text-gray-900'}`}>{stats.total}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card
-          className={`border-2 cursor-pointer hover:shadow-md transition-shadow ${selectedStatus === 'succeeded' ? 'border-orange-200 bg-orange-50' : 'border border-gray-200'}`}
-          onClick={() => setSelectedStatus('succeeded')}
-        >
-          <CardContent className="p-4">
-            <div className="text-center">
-              <p className={`text-sm font-medium ${selectedStatus === 'succeeded' ? 'text-orange-700' : 'text-gray-600'}`}>Succeeded</p>
-              <p className={`text-2xl font-bold ${selectedStatus === 'succeeded' ? 'text-orange-900' : 'text-gray-900'}`}>{stats.completed}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card
-          className={`border-2 cursor-pointer hover:shadow-md transition-shadow ${selectedStatus === 'refunded' ? 'border-orange-200 bg-orange-50' : 'border border-gray-200'}`}
-          onClick={() => setSelectedStatus('refunded')}
-        >
-          <CardContent className="p-4">
-            <div className="text-center">
-              <p className={`text-sm font-medium ${selectedStatus === 'refunded' ? 'text-orange-700' : 'text-gray-600'}`}>Refunded</p>
-              <p className={`text-2xl font-bold ${selectedStatus === 'refunded' ? 'text-orange-900' : 'text-gray-900'}`}>{stats.cancelled}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card
-          className={`border-2 cursor-pointer hover:shadow-md transition-shadow ${selectedStatus === 'disputed' ? 'border-orange-200 bg-orange-50' : 'border border-gray-200'}`}
-          onClick={() => setSelectedStatus('disputed')}
-        >
-          <CardContent className="p-4">
-            <div className="text-center">
-              <p className={`text-sm font-medium ${selectedStatus === 'disputed' ? 'text-orange-700' : 'text-gray-600'}`}>Disputed</p>
-              <p className={`text-2xl font-bold ${selectedStatus === 'disputed' ? 'text-orange-900' : 'text-gray-900'}`}>0</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card
-          className={`border-2 cursor-pointer hover:shadow-md transition-shadow ${selectedStatus === 'failed' ? 'border-orange-200 bg-orange-50' : 'border border-gray-200'}`}
-          onClick={() => setSelectedStatus('failed')}
-        >
-          <CardContent className="p-4">
-            <div className="text-center">
-              <p className={`text-sm font-medium ${selectedStatus === 'failed' ? 'text-orange-700' : 'text-gray-600'}`}>Failed</p>
-              <p className={`text-2xl font-bold ${selectedStatus === 'failed' ? 'text-orange-900' : 'text-gray-900'}`}>{stats.failed}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card
-          className={`border-2 cursor-pointer hover:shadow-md transition-shadow ${selectedStatus === 'uncaptured' ? 'border-orange-200 bg-orange-50' : 'border border-gray-200'}`}
-          onClick={() => setSelectedStatus('uncaptured')}
-        >
-          <CardContent className="p-4">
-            <div className="text-center">
-              <p className={`text-sm font-medium ${selectedStatus === 'uncaptured' ? 'text-orange-700' : 'text-gray-600'}`}>Uncaptured</p>
-              <p className={`text-2xl font-bold ${selectedStatus === 'uncaptured' ? 'text-orange-900' : 'text-gray-900'}`}>{stats.pending}</p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        {[
+          { key: 'all',        label: 'All',        count: stats.total },
+          { key: 'processing', label: 'Processing', count: stats.processing },
+          { key: 'completed',  label: 'Completed',  count: stats.completed },
+          { key: 'pending',    label: 'Pending',    count: stats.pending },
+          { key: 'failed',     label: 'Failed',     count: stats.failed },
+          { key: 'blocked',    label: 'Blocked',    count: stats.blocked },
+          { key: 'cancelled',  label: 'Cancelled',  count: stats.cancelled },
+        ].map(({ key, label, count }) => (
+          <Card
+            key={key}
+            className={`border-2 cursor-pointer hover:shadow-md transition-shadow ${selectedStatus === key ? 'border-orange-200 bg-orange-50' : 'border border-gray-200'}`}
+            onClick={() => setSelectedStatus(key)}
+          >
+            <CardContent className="p-4">
+              <div className="text-center">
+                <p className={`text-sm font-medium ${selectedStatus === key ? 'text-orange-700' : 'text-gray-600'}`}>{label}</p>
+                <p className={`text-2xl font-bold ${selectedStatus === key ? 'text-orange-900' : 'text-gray-900'}`}>{count}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Filter and Action Bar */}
@@ -323,8 +277,11 @@ export function Transactions() {
                           ${transaction.amount.toFixed(2)}
                         </span>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          transaction.status === 'completed' ? 'bg-green-100 text-green-800' :
-                          transaction.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          transaction.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                          transaction.status === 'completed'  ? 'bg-green-100 text-green-800' :
+                          transaction.status === 'pending'    ? 'bg-yellow-100 text-yellow-800' :
+                          transaction.status === 'blocked'    ? 'bg-orange-100 text-orange-800' :
+                          transaction.status === 'cancelled'  ? 'bg-gray-100 text-gray-800' :
                           'bg-red-100 text-red-800'
                         }`}>
                           {mapDbStatusToLabel(transaction.status)}
@@ -361,7 +318,10 @@ export function Transactions() {
                       <span className="text-sm text-gray-500">—</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-500">{transaction.status === 'failed' ? 'Payment blocked or failed' : '—'}</span>
+                      <span className="text-sm text-gray-500">
+                        {transaction.status === 'blocked' ? 'Blocked by risk check' :
+                         transaction.status === 'failed'  ? 'Payment failed' : '—'}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <button className="text-gray-400 hover:text-gray-600 bg-transparent border-none shadow-none">

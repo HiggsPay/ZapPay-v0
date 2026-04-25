@@ -8,7 +8,28 @@
       "Bash(git branch *)",
       "Bash(git checkout *)",
       "Bash(git push *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "WebFetch(domain:x402.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:docs.x402.org)",
+      "WebFetch(domain:www.x402.org)",
+      "WebSearch",
+      "WebFetch(domain:developers.stellar.org)",
+      "WebFetch(domain:solana.com)",
+      "WebFetch(domain:namespaces.chainagnostic.org)",
+      "Skill(claude-api)",
+      "Bash(npm install *)",
+      "Bash(npm search *)",
+      "Bash(python3 -c \"import json,sys; pkg=json.load\\(sys.stdin\\); exports=pkg.get\\('exports',{}\\); [print\\(k,'->',v if isinstance\\(v,str\\) else v.get\\('import',v.get\\('require',v\\)\\)\\) for k,v in exports.items\\(\\) if 'server' in k.lower\\(\\) or 'exact' in k.lower\\(\\)]\")",
+      "Bash(node -e \"const pkg=require\\('./node_modules/@x402/svm/package.json'\\); const exp=pkg.exports||{}; Object.keys\\(exp\\).filter\\(k=>/server|exact/i.test\\(k\\)\\).forEach\\(k=>console.log\\(k,'->', JSON.stringify\\(exp[k]\\)\\)\\)\")",
+      "Bash(node -e \"const pkg=require\\('./node_modules/@x402/stellar/package.json'\\); const exp=pkg.exports||{}; Object.keys\\(exp\\).filter\\(k=>/server|exact/i.test\\(k\\)\\).forEach\\(k=>console.log\\(k,'->', JSON.stringify\\(exp[k]\\)\\)\\)\")",
+      "Bash(node -e \"const m=require\\('@x402/svm/exact/server'\\); console.log\\(Object.keys\\(m\\)\\)\")",
+      "Bash(node *)",
+      "Bash(npx tsc *)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(grep -E '\\\\.\\(ts|tsx|js|json\\)$')",
+      "Bash(xargs grep *)"
     ]
   }
 }

@@ -13,7 +13,7 @@ interface TransactionData {
   owner_id: string;
   payment_link_id?: string;
   type: 'payment' | 'withdrawal' | 'deposit';
-  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'blocked' | 'cancelled';
   amount: number;
   currency: string;
   crypto_amount?: number;
@@ -22,6 +22,7 @@ interface TransactionData {
   tx_hash?: string;
   network_fee?: number;
   wallet_address?: string;
+  network?: string;
   block_reason?: string;
   risk_score?: number;
   session_id?: string;
@@ -47,6 +48,9 @@ export async function recordTransaction(data: TransactionData): Promise<{ succes
       customer_id: data.customer_id || null,
       tx_hash: data.tx_hash || null,
       network_fee: data.network_fee || null,
+      wallet_address: data.wallet_address || null,
+      network: data.network || null,
+      session_id: data.session_id || null,
     };
 
     console.log(`📝 Inserting transaction:`, JSON.stringify(transaction, null, 2));
@@ -93,7 +97,7 @@ export async function recordSuccessfulPayment(params: {
   return recordTransaction({
     ...params,
     type: 'payment',
-    status: 'completed',
+    status: 'processing',
   });
 }
 
@@ -137,7 +141,7 @@ export async function recordBlockedPayment(params: {
   return recordTransaction({
     ...params,
     type: 'payment',
-    status: 'failed', // Use 'failed' status for blocked transactions
+    status: 'blocked',
   });
 }
 
@@ -309,4 +313,81 @@ export async function getSystemOwnerId(payToAddress?: string): Promise<string | 
     console.error('❌ Error getting system owner_id:', error);
     return null;
   }
+}
+
+/**
+ * Update a transaction's status (idempotent — only updates if still 'processing')
+ */
+export async function updateTransactionStatus(
+  id: string,
+  status: 'completed' | 'failed'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabaseAdmin
+      .from('transactions')
+      .update({ status })
+      .eq('id', id)
+      .eq('status', 'processing');
+    if (error) {
+      console.error(`❌ Failed to update transaction ${id} to ${status}:`, error);
+      return { success: false, error: error.message };
+    }
+    console.log(`✅ Transaction ${id} → ${status}`);
+    return { success: true };
+  } catch (err: any) {
+    console.error(`❌ updateTransactionStatus error:`, err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Patch tx_hash, network, and wallet_address onto a processing transaction by session_id
+ */
+export async function updateTransactionBySessionId(
+  sessionId: string,
+  txHash: string,
+  network: string,
+  walletAddress?: string
+): Promise<void> {
+  const patch: Record<string, string> = { tx_hash: txHash, network };
+  if (walletAddress) patch.wallet_address = walletAddress;
+
+  const { error } = await supabaseAdmin
+    .from('transactions')
+    .update(patch)
+    .eq('session_id', sessionId)
+    .eq('status', 'processing');
+
+  if (error) {
+    console.error(`❌ Failed to patch tx_hash for session ${sessionId}:`, error);
+  } else {
+    console.log(`📝 Patched tx_hash ${txHash} onto session ${sessionId}`);
+  }
+}
+
+export interface PendingTransaction {
+  id: string;
+  tx_hash: string;
+  network: string;
+  created_at: string;
+}
+
+/**
+ * Fetch processing transactions that have a tx_hash — ready for on-chain confirmation
+ */
+export async function getPendingTransactions(limit = 50): Promise<PendingTransaction[]> {
+  const { data, error } = await supabaseAdmin
+    .from('transactions')
+    .select('id, tx_hash, network, created_at')
+    .eq('status', 'processing')
+    .not('tx_hash', 'is', null)
+    .not('network', 'is', null)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    console.error('❌ getPendingTransactions error:', error);
+    return [];
+  }
+  return (data ?? []) as PendingTransaction[];
 }

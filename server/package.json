@@ -9,14 +9,19 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
+    "@solana/web3.js": "^1.98.4",
+    "@stellar/stellar-sdk": "^15.0.1",
     "@supabase/supabase-js": "^2.54.0",
+    "@x402/core": "^2.10.0",
+    "@x402/evm": "^2.10.0",
+    "@x402/hono": "^2.10.0",
+    "@x402/stellar": "^2.10.0",
+    "@x402/svm": "^2.10.0",
     "axios": "^1.12.2",
     "dotenv": "^16.6.1",
     "hono": "^4.6.17",
     "uuid": "^11.0.6",
-    "@x402/core": "^2.10.0",
-    "@x402/evm": "^2.10.0",
-    "@x402/hono": "^2.10.0"
+    "viem": "^2.48.4"
   },
   "devDependencies": {
     "@types/node": "^22.18.12",
