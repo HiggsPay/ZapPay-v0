@@ -29,7 +29,12 @@
       "Bash(npx tsc *)",
       "Bash(node_modules/.bin/tsc --noEmit)",
       "Bash(grep -E '\\\\.\\(ts|tsx|js|json\\)$')",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(cp -r \"C:/Users/sk_16/Documents/GitHub/ZapPay-v0/.claude/skills/transaction-status\" \"C:/Users/sk_16/.claude/skills/\")",
+      "Bash(cp -r \"C:/Users/sk_16/Documents/GitHub/ZapPay-v0/.claude/skills/confirmation-poller\" \"C:/Users/sk_16/.claude/skills/\")",
+      "Bash(cp -r \"C:/Users/sk_16/Documents/GitHub/ZapPay-v0/.claude/skills/wallet-risk\" \"C:/Users/sk_16/.claude/skills/\")",
+      "Bash(cp -r \"C:/Users/sk_16/Documents/GitHub/ZapPay-v0/.claude/skills/payment-flow\" \"C:/Users/sk_16/.claude/skills/\")",
+      "Bash(grep -E '\\\\.\\(tsx|ts|json\\)$|^d')"
     ]
   }
 }
