@@ -8,7 +8,7 @@ import { registerExactEvmScheme } from "@x402/evm/exact/server";
 import { registerExactSvmScheme } from "@x402/svm/exact/server";
 import { ExactStellarScheme } from "@x402/stellar/exact/server";
 import type { Network } from "@x402/core/types";
-import { createDynamicPaymentMiddleware, invalidateCache } from "./middleware/dynamicPaymentMiddleware";
+import { createDynamicPaymentMiddleware, createCheckoutPaymentMiddleware, invalidateCache } from "./middleware/dynamicPaymentMiddleware";
 import { getTokenConfig, SUPPORTED_TOKENS } from "./tokenRegistry";
 import { v4 as uuidv4 } from "uuid";
 import { createClient } from "@supabase/supabase-js";
@@ -23,7 +23,7 @@ config();
 const facilitatorUrl = process.env.FACILITATOR_URL || "https://x402.org/facilitator";
 const payTo = process.env.ADDRESS as `0x${string}`;
 const networkEnv = process.env.NETWORK || "base-sepolia";
-const port = parseInt(process.env.PORT || "3001");
+const port = parseInt(process.env.PORT || "3002");
 
 // Map legacy network names to CAIP-2 identifiers required by x402 v2.
 function toCaip2(n: string): Network {
@@ -199,6 +199,8 @@ resourceServer.register("stellar:*", new ExactStellarScheme());
 
 app.use("/api/pay/session", createDynamicPaymentMiddleware("/api/pay/session", "$1.00", resourceServer, supabaseAdmin));
 app.use("/api/pay/onetime", createDynamicPaymentMiddleware("/api/pay/onetime", "$0.10", resourceServer, supabaseAdmin));
+app.use("/api/checkout/pay", walletRiskMiddleware);
+app.use("/api/checkout/pay", createCheckoutPaymentMiddleware(resourceServer, supabaseAdmin));
 
 // Post-settlement interceptors: read PAYMENT-RESPONSE header after x402 middleware sets it
 // (the header is only available after next() returns, not inside the route handler)
@@ -217,8 +219,9 @@ async function captureSettlementData(c: any): Promise<void> {
   }
 }
 
-app.use("/api/pay/session",  async (c, next) => { await next(); await captureSettlementData(c); });
-app.use("/api/pay/onetime",  async (c, next) => { await next(); await captureSettlementData(c); });
+app.use("/api/pay/session",   async (c, next) => { await next(); await captureSettlementData(c); });
+app.use("/api/pay/onetime",   async (c, next) => { await next(); await captureSettlementData(c); });
+app.use("/api/checkout/pay", async (c, next) => { await next(); await captureSettlementData(c); });
 
 // Apply CORS to all other routes
 app.use("/*", cors({
@@ -351,6 +354,249 @@ app.put("/api/profile/stellar-wallet", async (c) => {
   if (error) return c.json({ error: "DB error" }, 500);
   invalidateCache(userId);
   return c.json({ success: true });
+});
+
+// Free endpoint - create checkout session from cart
+app.post("/api/checkout", async (c) => {
+  try {
+    const body = await c.req.json() as {
+      owner_id: string;
+      items: Array<{ product_id: string; qty?: number }>;
+    };
+
+    const { owner_id, items } = body;
+    if (!owner_id || !Array.isArray(items) || items.length === 0) {
+      return c.json({ error: "owner_id and non-empty items[] required" }, 400);
+    }
+
+    const productIds = [...new Set(items.map(i => i.product_id))];
+
+    const { data: products, error: productError } = await supabaseAdmin
+      .from("products")
+      .select("id, name, pricing, owner_id")
+      .in("id", productIds);
+
+    if (productError || !products?.length) {
+      return c.json({ error: "Failed to fetch products" }, 400);
+    }
+
+    // Reject if any product not found
+    if (products.length !== productIds.length) {
+      const foundIds = new Set(products.map((p: any) => p.id));
+      const missing = productIds.filter(id => !foundIds.has(id));
+      return c.json({ error: `Products not found: ${missing.join(", ")}` }, 404);
+    }
+
+    // Reject mixed-merchant carts
+    const ownerIds = new Set(products.map((p: any) => p.owner_id));
+    if (ownerIds.size > 1) {
+      return c.json({ error: "All products must belong to the same merchant" }, 400);
+    }
+    const resolvedOwnerId = products[0].owner_id;
+    if (resolvedOwnerId !== owner_id) {
+      return c.json({ error: "owner_id does not match product ownership" }, 400);
+    }
+
+    const productMap = new Map(products.map((p: any) => [p.id, p]));
+    let total = 0;
+    const lineItems = items.map(item => {
+      const product = productMap.get(item.product_id) as any;
+      const qty = Math.max(1, Math.floor(item.qty ?? 1));
+      const subtotal = Number(product.pricing) * qty;
+      total += subtotal;
+      return {
+        product_id: product.id,
+        name: product.name,
+        unit_price: Number(product.pricing),
+        qty,
+        subtotal,
+      };
+    });
+
+    total = Math.round(total * 100) / 100;
+
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    const { data: checkout, error: insertError } = await supabaseAdmin
+      .from("checkouts")
+      .insert({
+        owner_id: resolvedOwnerId,
+        total_amount: total,
+        currency: "USD",
+        line_items: lineItems,
+        expires_at: expiresAt,
+        status: "pending",
+      })
+      .select("id, total_amount, currency, line_items, expires_at")
+      .single();
+
+    if (insertError || !checkout) {
+      console.error("❌ Failed to create checkout:", insertError);
+      return c.json({ error: "Failed to create checkout" }, 500);
+    }
+
+    return c.json({
+      success: true,
+      checkout_id: checkout.id,
+      total: checkout.total_amount,
+      currency: checkout.currency,
+      line_items: checkout.line_items,
+      expires_at: checkout.expires_at,
+    }, 201);
+  } catch (err: any) {
+    console.error("❌ /api/checkout error:", err);
+    return c.json({ error: "Invalid request" }, 400);
+  }
+});
+
+// Paid endpoint - pay for a checkout session
+app.post("/api/checkout/pay", async (c) => {
+  try {
+    const checkoutId = c.req.header("X-Checkout-Id");
+    if (!checkoutId) return c.json({ error: "X-Checkout-Id header required" }, 400);
+
+    const { data: checkout, error: fetchError } = await supabaseAdmin
+      .from("checkouts")
+      .select("id, owner_id, total_amount, currency, line_items, status, expires_at")
+      .eq("id", checkoutId)
+      .single();
+
+    if (fetchError || !checkout) return c.json({ error: "Checkout not found" }, 404);
+    if (checkout.status !== "pending") return c.json({ error: "Checkout already paid or expired" }, 409);
+
+    // Mark as paid (idempotency guard)
+    const { error: updateError } = await supabaseAdmin
+      .from("checkouts")
+      .update({ status: "paid" })
+      .eq("id", checkoutId)
+      .eq("status", "pending");
+
+    if (updateError) return c.json({ error: "Failed to settle checkout" }, 500);
+
+    const sessionId = uuidv4();
+    c.set("lastSessionId", sessionId);
+
+    try {
+      const paymentHeader = c.req.header("payment-signature") || c.req.header("x-payment");
+      let walletAddress: string | undefined;
+      if (paymentHeader) {
+        try {
+          const decoded = JSON.parse(Buffer.from(paymentHeader, "base64").toString("utf-8"));
+          walletAddress = decoded?.payload?.authorization?.from;
+        } catch {}
+      }
+
+      await recordSuccessfulPayment({
+        owner_id: checkout.owner_id,
+        amount: Number(checkout.total_amount),
+        currency: checkout.currency,
+        crypto_amount: Number(checkout.total_amount),
+        crypto_currency: "USDC",
+        wallet_address: walletAddress,
+        session_id: sessionId,
+      });
+
+      // Patch checkout_id onto the transaction after recording
+      await supabaseAdmin
+        .from("transactions")
+        .update({ checkout_id: checkoutId })
+        .eq("session_id", sessionId);
+    } catch (recordErr: any) {
+      console.error("❌ Failed to record checkout transaction:", recordErr.message);
+    }
+
+    return c.json({
+      success: true,
+      checkout_id: checkoutId,
+      session_id: sessionId,
+      total: checkout.total_amount,
+      currency: checkout.currency,
+      purchased: checkout.line_items,
+    });
+  } catch (err: any) {
+    console.error("❌ /api/checkout/pay error:", err);
+    return c.json({ error: "Payment failed" }, 500);
+  }
+});
+
+// Free endpoint - get checkout details + merchant payment options (no auth needed)
+app.get("/api/checkout/:id/payment-options", async (c) => {
+  try {
+    const checkoutId = c.req.param("id");
+
+    const { data: checkout, error: checkoutError } = await supabaseAdmin
+      .from("checkouts")
+      .select("id, owner_id, total_amount, currency, line_items, expires_at, status")
+      .eq("id", checkoutId)
+      .single();
+
+    if (checkoutError || !checkout) {
+      return c.json({ error: "Checkout not found" }, 404);
+    }
+
+    if (checkout.status !== "pending") {
+      return c.json({ error: "Checkout already paid or expired" }, 409);
+    }
+
+    if (new Date() > new Date(checkout.expires_at)) {
+      await supabaseAdmin.from("checkouts").update({ status: "expired" }).eq("id", checkoutId);
+      return c.json({ error: "Checkout expired" }, 410);
+    }
+
+    const [{ data: profile }, { data: configs }] = await Promise.all([
+      supabaseAdmin
+        .from("profiles")
+        .select("wallet_address, solana_wallet_address, stellar_wallet_address")
+        .eq("user_id", checkout.owner_id)
+        .single(),
+      supabaseAdmin
+        .from("merchant_payment_configs")
+        .select("chain_id, token_symbol, asset, enabled")
+        .eq("owner_id", checkout.owner_id)
+        .eq("enabled", true),
+    ]);
+
+    const payment_options = (configs ?? [])
+      .map((cfg: any) => {
+        const token = getTokenConfig(cfg.chain_id, cfg.token_symbol);
+        if (!token) return null;
+
+        let payTo: string | null = null;
+        if (token.chainFamily === "evm") payTo = profile?.wallet_address ?? null;
+        else if (token.chainFamily === "solana") payTo = profile?.solana_wallet_address ?? null;
+        else if (token.chainFamily === "stellar") payTo = profile?.stellar_wallet_address ?? null;
+        if (!payTo) return null;
+
+        return {
+          chain_id: token.chainId,
+          chain_name: token.chainName,
+          chain_family: token.chainFamily,
+          network: token.network,
+          token_symbol: token.tokenSymbol,
+          token_name: token.tokenName,
+          asset: token.asset,
+          is_testnet: token.isTestnet,
+          pay_to: payTo,
+        };
+      })
+      .filter(Boolean);
+
+    return c.json({
+      success: true,
+      checkout: {
+        id: checkout.id,
+        total: checkout.total_amount,
+        currency: checkout.currency,
+        line_items: checkout.line_items,
+        expires_at: checkout.expires_at,
+        status: checkout.status,
+      },
+      payment_options,
+    });
+  } catch (err: any) {
+    console.error("❌ /api/checkout/:id/payment-options error:", err);
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 // Free endpoint - health check

@@ -66,6 +66,39 @@ export function invalidateCache(ownerId: string): void {
   cache.delete(ownerId);
 }
 
+export function createCheckoutPaymentMiddleware(
+  resourceServer: x402ResourceServer,
+  supabaseAdmin: any
+) {
+  return async (c: Context, next: Next) => {
+    const checkoutId = c.req.header("X-Checkout-Id");
+    if (!checkoutId) return c.json({ error: "X-Checkout-Id header required" }, 400);
+
+    const { data: checkout } = await supabaseAdmin
+      .from("checkouts")
+      .select("owner_id, total_amount, currency, status, expires_at")
+      .eq("id", checkoutId)
+      .single();
+
+    if (!checkout) return c.json({ error: "Checkout not found" }, 404);
+    if (checkout.status !== "pending") return c.json({ error: "Checkout already paid or expired" }, 409);
+    if (new Date() > new Date(checkout.expires_at)) {
+      await supabaseAdmin.from("checkouts").update({ status: "expired" }).eq("id", checkoutId);
+      return c.json({ error: "Checkout expired" }, 410);
+    }
+
+    const price = `$${Number(checkout.total_amount).toFixed(2)}`;
+    const accepts = await getMerchantAccepts(supabaseAdmin, checkout.owner_id, price);
+    if (!accepts?.length) return c.json({ error: "Merchant payment config not found" }, 500);
+
+    const dynamicMiddleware = paymentMiddleware(
+      { "/api/checkout/pay": { accepts, description: "Cart checkout", mimeType: "application/json" } },
+      resourceServer
+    );
+    return dynamicMiddleware(c, next);
+  };
+}
+
 export function createDynamicPaymentMiddleware(
   path: string,
   price: string,

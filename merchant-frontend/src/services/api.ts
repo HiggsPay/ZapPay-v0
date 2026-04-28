@@ -186,6 +186,18 @@ export const api = {
     const res = await apiClient.put("/api/profile/stellar-wallet", { stellar_wallet_address });
     return res.data;
   },
+
+  getCheckoutPaymentOptions: async (checkoutId: string): Promise<CheckoutPaymentOptionsResponse> => {
+    const res = await baseApiClient.get(`/api/checkout/${checkoutId}/payment-options`);
+    return res.data;
+  },
+
+  payCheckout: async (checkoutId: string, paymentAxiosInstance: any) => {
+    const res = await paymentAxiosInstance.post("/api/checkout/pay", {}, {
+      headers: { "X-Checkout-Id": checkoutId },
+    });
+    return res.data;
+  },
 };
 
 // Types for API responses
@@ -292,6 +304,39 @@ export interface TransactionStats {
   blocked: number;
   cancelled: number;
   totalAmount: number;
+}
+
+export interface CheckoutLineItem {
+  product_id: string;
+  name: string;
+  unit_price: number;
+  qty: number;
+  subtotal: number;
+}
+
+export interface CheckoutPaymentOption {
+  chain_id: string;
+  chain_name: string;
+  chain_family: "evm" | "solana" | "stellar";
+  network: string;
+  token_symbol: string;
+  token_name: string;
+  asset: string;
+  is_testnet: boolean;
+  pay_to: string;
+}
+
+export interface CheckoutPaymentOptionsResponse {
+  success: boolean;
+  checkout: {
+    id: string;
+    total: number;
+    currency: string;
+    line_items: CheckoutLineItem[];
+    expires_at: string;
+    status: string;
+  };
+  payment_options: CheckoutPaymentOption[];
 }
 
 export interface GetTransactionsResponse {

@@ -4,6 +4,7 @@ import type { PublicClient, Chain } from 'viem';
 import { Connection, clusterApiUrl } from '@solana/web3.js';
 import { Horizon } from '@stellar/stellar-sdk';
 import { getPendingTransactions, updateTransactionStatus } from './transactionService.js';
+import { dispatchWebhook, retryPendingWebhooks } from './webhookDispatcher.js';
 
 const STALE_AFTER_MS = parseInt(process.env.TX_STALE_AFTER_MS ?? String(30 * 60 * 1000));
 
@@ -52,6 +53,9 @@ async function checkEvm(tx: { id: string; tx_hash: string; network: string }, ag
     if (receipt.status === 'success') {
       await updateTransactionStatus(tx.id, 'completed');
       console.log(`✅ ${tx.id} [EVM]: confirmed (block ${receipt.blockNumber})`);
+      dispatchWebhook(tx.id).catch(err =>
+        console.error(`[WebhookDispatcher] EVM dispatch error for ${tx.id}:`, err.message)
+      );
     } else if (receipt.status === 'reverted') {
       await updateTransactionStatus(tx.id, 'failed');
       console.log(`❌ ${tx.id} [EVM]: reverted on-chain`);
@@ -114,6 +118,9 @@ async function checkSolana(tx: { id: string; tx_hash: string; network: string },
     if (result.meta?.err === null) {
       await updateTransactionStatus(tx.id, 'completed');
       console.log(`✅ ${tx.id} [Solana]: confirmed (slot ${result.slot})`);
+      dispatchWebhook(tx.id).catch(err =>
+        console.error(`[WebhookDispatcher] Solana dispatch error for ${tx.id}:`, err.message)
+      );
     } else {
       await updateTransactionStatus(tx.id, 'failed');
       console.log(`❌ ${tx.id} [Solana]: failed on-chain — ${JSON.stringify(result.meta?.err)}`);
@@ -155,6 +162,9 @@ async function checkStellar(tx: { id: string; tx_hash: string; network: string }
     if (result.successful) {
       await updateTransactionStatus(tx.id, 'completed');
       console.log(`✅ ${tx.id} [Stellar]: confirmed (ledger ${result.ledger})`);
+      dispatchWebhook(tx.id).catch(err =>
+        console.error(`[WebhookDispatcher] Stellar dispatch error for ${tx.id}:`, err.message)
+      );
     } else {
       await updateTransactionStatus(tx.id, 'failed');
       console.log(`❌ ${tx.id} [Stellar]: failed on-chain`);
@@ -193,10 +203,11 @@ async function pollOnce(): Promise<void> {
   inFlight = true;
   try {
     const pending = await getPendingTransactions(50);
-    if (pending.length === 0) return;
-
-    console.log(`🔍 confirmationPoller: checking ${pending.length} transaction(s)`);
-    await Promise.allSettled(pending.map(tx => checkTransaction(tx)));
+    if (pending.length > 0) {
+      console.log(`🔍 confirmationPoller: checking ${pending.length} transaction(s)`);
+      await Promise.allSettled(pending.map(tx => checkTransaction(tx)));
+    }
+    await retryPendingWebhooks();
   } finally {
     inFlight = false;
   }

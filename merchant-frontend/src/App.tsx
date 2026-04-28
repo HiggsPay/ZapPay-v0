@@ -45,6 +45,7 @@ function App() {
             <Route path="/api-key" element={<ApiKey />} />
           </Route>
           <Route path="/payment/:paymentLink" element={<ZapPayUI />} />
+          <Route path="/checkout" element={<ZapPayUI />} />
         </Routes>
       </Router>
     </WalletProvider>

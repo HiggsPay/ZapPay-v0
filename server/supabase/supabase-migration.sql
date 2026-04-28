@@ -144,6 +144,32 @@ ALTER TABLE transactions ADD COLUMN IF NOT EXISTS session_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_transactions_processing ON transactions(created_at) WHERE status = 'processing';
 CREATE INDEX IF NOT EXISTS idx_payment_links_link ON payment_links(payment_link);
 
+-- Additive: webhook delivery tracking (ZapPay → Lavo Protocol)
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS webhook_delivered_at TIMESTAMPTZ;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS webhook_attempts     INT NOT NULL DEFAULT 0;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS webhook_last_error   TEXT;
+CREATE INDEX IF NOT EXISTS idx_transactions_webhook_pending
+  ON transactions (status, webhook_delivered_at, webhook_attempts)
+  WHERE status = 'completed' AND webhook_delivered_at IS NULL;
+
+-- Additive: cart checkout support
+CREATE TABLE IF NOT EXISTS checkouts (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id     UUID NOT NULL REFERENCES profiles(user_id) ON DELETE CASCADE,
+  status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','expired')),
+  total_amount DECIMAL(12,2) NOT NULL,
+  currency     TEXT NOT NULL DEFAULT 'USD',
+  line_items   JSONB NOT NULL,
+  expires_at   TIMESTAMP WITH TIME ZONE NOT NULL,
+  created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS checkout_id UUID REFERENCES checkouts(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_checkouts_owner ON checkouts(owner_id);
+CREATE INDEX IF NOT EXISTS idx_checkouts_expires ON checkouts(expires_at) WHERE status = 'pending';
+ALTER TABLE checkouts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY checkouts_select ON checkouts FOR SELECT USING ( is_owner(owner_id) );
+CREATE POLICY checkouts_modify ON checkouts FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
+
 -- RLS
 ALTER TABLE merchant_payment_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
