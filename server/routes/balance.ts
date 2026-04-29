@@ -4,10 +4,8 @@ import { supabaseAdmin } from "../lib/supabase";
 
 const app = new Hono();
 
-app.use("/api/balance*", clerkAuthMiddleware);
-
 // GET /api/balance — list all balance rows for this merchant
-app.get("/api/balance", async (c) => {
+app.get("/api/balance", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
 
   const { data: balances, error } = await supabaseAdmin
@@ -29,7 +27,7 @@ app.get("/api/balance", async (c) => {
 });
 
 // POST /api/balance/sync — upsert a balance row (call after receiving a payment)
-app.post("/api/balance/sync", async (c) => {
+app.post("/api/balance/sync", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
 
   const body = await c.req.json() as {

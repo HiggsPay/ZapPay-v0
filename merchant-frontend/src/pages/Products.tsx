@@ -12,15 +12,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { 
-  Plus, 
+import {
+  Plus,
   Package,
   MoreVertical,
   BarChart3,
   ChevronDown,
   X,
   ArrowUp,
-  Settings
+  Settings,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { api, type Product } from '@/services/api';
 
@@ -80,6 +82,13 @@ export function Products() {
   };
 
   const [isLoading, setIsLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1500);
+  };
 
   const handleCreateProduct = async () => {
     if (!productName.trim() || !productPrice.trim()) {
@@ -287,6 +296,9 @@ export function Products() {
                   Name
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Product ID
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Pricing
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -303,7 +315,7 @@ export function Products() {
             <tbody className="bg-white divide-y divide-gray-200">
               {isLoadingProducts ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                     <div className="flex items-center justify-center space-x-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
                       <span>Loading products...</span>
@@ -312,7 +324,7 @@ export function Products() {
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                     <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No products found.</p>
                     <p className="text-sm mt-1">Create your first product to get started.</p>
@@ -337,6 +349,24 @@ export function Products() {
                           <Package className="h-4 w-4 text-orange-600" />
                         </div>
                         <span className="text-sm font-medium text-gray-900">{product.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <code className="text-xs text-gray-500 font-mono" title={product.id}>
+                          {product.id.slice(0, 8)}…
+                        </code>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopyId(product.id)}
+                          className="h-6 w-6 p-0"
+                          title="Copy full ID"
+                        >
+                          {copiedId === product.id
+                            ? <Check className="h-3 w-3 text-green-600" />
+                            : <Copy className="h-3 w-3 text-gray-400" />}
+                        </Button>
                       </div>
                     </td>
                     <td className="px-4 py-3">

@@ -4,10 +4,7 @@ import { supabaseAdmin } from "../lib/supabase";
 
 const app = new Hono();
 
-app.use("/api/product*", clerkAuthMiddleware);
-app.use("/api/products", clerkAuthMiddleware);
-
-app.get("/api/products", async (c) => {
+app.get("/api/products", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const { data, error } = await supabaseAdmin
     .from("products")
@@ -18,7 +15,7 @@ app.get("/api/products", async (c) => {
   return c.json({ success: true, products: data ?? [] });
 });
 
-app.post("/api/product", async (c) => {
+app.post("/api/product", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const body = await c.req.json();
   const { name, pricing, description, currency, image_url } = body;
@@ -42,7 +39,7 @@ app.post("/api/product", async (c) => {
   return c.json({ success: true, product: data }, 201);
 });
 
-app.put("/api/product/:id", async (c) => {
+app.put("/api/product/:id", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const productId = c.req.param("id");
   const body = await c.req.json();
@@ -76,7 +73,7 @@ app.put("/api/product/:id", async (c) => {
   return c.json({ success: true, product: data });
 });
 
-app.delete("/api/product/:id", async (c) => {
+app.delete("/api/product/:id", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const productId = c.req.param("id");
   const { error } = await supabaseAdmin

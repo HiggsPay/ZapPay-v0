@@ -6,10 +6,7 @@ import { invalidateCache } from "../middleware/dynamicPaymentMiddleware";
 
 const app = new Hono();
 
-app.use("/api/profile", clerkAuthMiddleware);
-app.use("/api/profile/*", clerkAuthMiddleware);
-
-app.get("/api/profile", async (c) => {
+app.get("/api/profile", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const { data, error } = await supabaseAdmin
     .from("profiles")
@@ -20,7 +17,7 @@ app.get("/api/profile", async (c) => {
   return c.json({ success: true, profile: data });
 });
 
-app.put("/api/profile/wallet", async (c) => {
+app.put("/api/profile/wallet", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const { wallet_address } = await c.req.json();
   if (!wallet_address?.match(/^0x[0-9a-fA-F]{40}$/))
@@ -34,7 +31,7 @@ app.put("/api/profile/wallet", async (c) => {
   return c.json({ success: true });
 });
 
-app.put("/api/profile/solana-wallet", async (c) => {
+app.put("/api/profile/solana-wallet", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const { solana_wallet_address } = await c.req.json();
   if (!solana_wallet_address) return c.json({ error: "solana_wallet_address required" }, 400);
@@ -47,7 +44,7 @@ app.put("/api/profile/solana-wallet", async (c) => {
   return c.json({ success: true });
 });
 
-app.put("/api/profile/stellar-wallet", async (c) => {
+app.put("/api/profile/stellar-wallet", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const { stellar_wallet_address } = await c.req.json();
   if (!stellar_wallet_address) return c.json({ error: "stellar_wallet_address required" }, 400);
@@ -62,7 +59,7 @@ app.put("/api/profile/stellar-wallet", async (c) => {
 
 // ── Webhook configuration ──────────────────────────────────────────────────────
 
-app.put("/api/profile/webhook", async (c) => {
+app.put("/api/profile/webhook", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const body = await c.req.json();
   const { webhook_url } = body;
@@ -89,7 +86,7 @@ app.put("/api/profile/webhook", async (c) => {
   return c.json({ success: true });
 });
 
-app.get("/api/profile/webhook-secret", async (c) => {
+app.get("/api/profile/webhook-secret", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const { data, error } = await supabaseAdmin
     .from("profiles")
@@ -100,7 +97,7 @@ app.get("/api/profile/webhook-secret", async (c) => {
   return c.json({ success: true, webhook_secret: data.webhook_secret });
 });
 
-app.post("/api/profile/webhook/test", async (c) => {
+app.post("/api/profile/webhook/test", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const { data, error } = await supabaseAdmin
     .from("profiles")

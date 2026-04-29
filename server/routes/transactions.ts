@@ -4,9 +4,7 @@ import { supabaseAdmin } from "../lib/supabase";
 
 const app = new Hono();
 
-app.use("/api/transactions", clerkAuthMiddleware);
-
-app.get("/api/transactions", async (c) => {
+app.get("/api/transactions", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
 
   const status = c.req.query("status");

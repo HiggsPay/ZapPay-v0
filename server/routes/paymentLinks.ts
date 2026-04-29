@@ -31,10 +31,7 @@ app.get("/api/payment-link/:paymentLink", async (c) => {
 });
 
 // Authenticated routes
-app.use("/api/payment-links", clerkAuthMiddleware);
-app.use("/api/payment-link", clerkAuthMiddleware);
-
-app.get("/api/payment-links", async (c) => {
+app.get("/api/payment-links", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const { data, error } = await supabaseAdmin
     .from("payment_links")
@@ -49,7 +46,7 @@ app.get("/api/payment-links", async (c) => {
   return c.json({ success: true, payment_links: transformed });
 });
 
-app.post("/api/payment-link", async (c) => {
+app.post("/api/payment-link", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const body = await c.req.json();
   const { link_name, product_name, expiry_date } = body;

@@ -6,9 +6,7 @@ import { invalidateCache } from "../middleware/dynamicPaymentMiddleware";
 
 const app = new Hono();
 
-app.use("/api/payment-config", clerkAuthMiddleware);
-
-app.get("/api/payment-config", async (c) => {
+app.get("/api/payment-config", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const { data, error } = await supabaseAdmin
     .from("merchant_payment_configs")
@@ -18,7 +16,7 @@ app.get("/api/payment-config", async (c) => {
   return c.json({ success: true, configs: data });
 });
 
-app.put("/api/payment-config", async (c) => {
+app.put("/api/payment-config", clerkAuthMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const body = await c.req.json() as { configs: Array<{ chain_id: string; token_symbol: string }> };
   const { configs } = body;
