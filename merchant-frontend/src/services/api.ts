@@ -3,7 +3,6 @@ import type { AxiosInstance } from "axios";
 import type { WalletClient } from "viem";
 import { x402Client, wrapAxiosWithPayment } from "@x402/axios";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
-import { supabase } from "@/lib/supabase";
 
 // Adapt a viem WalletClient (MetaMask-backed) into the ClientEvmSigner interface
 // expected by @x402/evm. The v2 client calls signer.signTypedData({ domain, types,
@@ -31,19 +30,24 @@ function toX402Signer(walletClient: WalletClient) {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
+// Clerk token getter — injected from outside (set by the component that has Clerk context)
+let _getClerkToken: (() => Promise<string | null>) | null = null;
+
+export function setClerkTokenGetter(fn: () => Promise<string | null>) {
+  _getClerkToken = fn;
+}
+
 // Base axios instance without payment interceptor
 const baseApiClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
+  headers: { "Content-Type": "application/json" },
 });
 
-// Add Supabase auth interceptor
+// Attach Clerk JWT on every request
 baseApiClient.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
+  if (_getClerkToken) {
+    const token = await _getClerkToken();
+    if (token) config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -172,6 +176,11 @@ export const api = {
     return res.data;
   },
 
+  getProfile: async (): Promise<{ success: boolean; profile: MerchantProfile }> => {
+    const res = await apiClient.get("/api/profile");
+    return res.data;
+  },
+
   updateWalletAddress: async (wallet_address: string) => {
     const res = await apiClient.put("/api/profile/wallet", { wallet_address });
     return res.data;
@@ -184,6 +193,57 @@ export const api = {
 
   updateStellarWalletAddress: async (stellar_wallet_address: string) => {
     const res = await apiClient.put("/api/profile/stellar-wallet", { stellar_wallet_address });
+    return res.data;
+  },
+
+  updateWebhookUrl: async (webhook_url: string | null) => {
+    const res = await apiClient.put("/api/profile/webhook", { webhook_url });
+    return res.data;
+  },
+
+  getWebhookSecret: async (): Promise<{ success: boolean; webhook_secret: string | null }> => {
+    const res = await apiClient.get("/api/profile/webhook-secret");
+    return res.data;
+  },
+
+  testWebhook: async (): Promise<{ ok: boolean; status: number; error?: string }> => {
+    const res = await apiClient.post("/api/profile/webhook/test");
+    return res.data;
+  },
+
+  // Checkout sessions (Stripe-style)
+  createCheckout: async (body: CreateCheckoutBody): Promise<CreateCheckoutResponse> => {
+    const res = await apiClient.post("/api/checkout", body);
+    return res.data;
+  },
+
+  listCheckouts: async (params?: { status?: string; limit?: number; offset?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.append("status", params.status);
+    if (params?.limit)  q.append("limit",  params.limit.toString());
+    if (params?.offset) q.append("offset", params.offset.toString());
+    const res = await apiClient.get(`/api/checkouts?${q.toString()}`);
+    return res.data;
+  },
+
+  getCheckout: async (id: string) => {
+    const res = await apiClient.get(`/api/checkout/${id}`);
+    return res.data;
+  },
+
+  expireCheckout: async (id: string) => {
+    const res = await apiClient.post(`/api/checkout/${id}/expire`);
+    return res.data;
+  },
+
+  // Balance
+  getBalance: async (): Promise<GetBalanceResponse> => {
+    const res = await apiClient.get("/api/balance");
+    return res.data;
+  },
+
+  syncBalance: async (body: { currency: string; chain_id: string; amount: number; usd_value?: number }) => {
+    const res = await apiClient.post("/api/balance/sync", body);
     return res.data;
   },
 
@@ -201,6 +261,18 @@ export const api = {
 };
 
 // Types for API responses
+export interface MerchantProfile {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  wallet_address: string | null;
+  solana_wallet_address: string | null;
+  stellar_wallet_address: string | null;
+  api_key: string | null;
+  plan: string;
+  webhook_url: string | null;
+}
+
 export interface TokenConfig {
   chainId: string;
   chainName: string;
@@ -336,7 +408,61 @@ export interface CheckoutPaymentOptionsResponse {
     expires_at: string;
     status: string;
   };
+  merchant: { display_name: string };
   payment_options: CheckoutPaymentOption[];
+}
+
+export interface CreateCheckoutBody {
+  items: Array<{ product_id: string; qty?: number }>;
+  success_url?: string;
+  cancel_url?: string;
+  metadata?: Record<string, unknown>;
+  currency?: string;
+  expires_in_minutes?: number;
+}
+
+export interface CreateCheckoutResponse {
+  success: boolean;
+  checkout_id: string;
+  checkout_url: string;
+  total: number;
+  currency: string;
+  line_items: CheckoutLineItem[];
+  expires_at: string;
+  status: string;
+  error?: string;
+}
+
+export interface BalanceRow {
+  id: string;
+  owner_id: string;
+  currency: string;
+  chain_id: string;
+  amount: number;
+  usd_value: number | null;
+  updated_at: string;
+}
+
+export interface GetBalanceResponse {
+  success: boolean;
+  balances: BalanceRow[];
+  total_usd: number;
+  error?: string;
+}
+
+export interface Checkout {
+  id: string;
+  owner_id: string;
+  status: 'pending' | 'paid' | 'expired' | 'cancelled';
+  total_amount: number;
+  currency: string;
+  line_items: CheckoutLineItem[];
+  success_url?: string;
+  cancel_url?: string;
+  metadata?: Record<string, unknown>;
+  expires_at: string;
+  paid_at?: string;
+  created_at: string;
 }
 
 export interface GetTransactionsResponse {

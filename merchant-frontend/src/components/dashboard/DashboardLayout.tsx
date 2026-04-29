@@ -1,10 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useAuth } from '@clerk/clerk-react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { setClerkTokenGetter } from '@/services/api';
 
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { getToken } = useAuth();
+
+  // Wire Clerk token into the API client once on mount
+  useEffect(() => {
+    setClerkTokenGetter(() => getToken());
+  }, [getToken]);
 
   return (
     <div className="h-screen bg-background">

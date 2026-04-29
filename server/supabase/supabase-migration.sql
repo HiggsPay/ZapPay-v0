@@ -1,257 +1,216 @@
--- Rebuild schema for ZapPay
+-- ZapPay SaaS Schema — drop and recreate everything
+-- Auth: Clerk (clerk_user_id TEXT). No RLS. App layer enforces isolation.
 
--- Required extensions
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- Safety: drop tables if they exist (order respects FKs)
+-- Drop all existing tables (order respects FKs)
+DROP TABLE IF EXISTS subscriptions CASCADE;
 DROP TABLE IF EXISTS merchant_payment_configs CASCADE;
-DROP TABLE IF EXISTS payment_links CASCADE;
 DROP TABLE IF EXISTS transactions CASCADE;
+DROP TABLE IF EXISTS payment_links CASCADE;
+DROP TABLE IF EXISTS checkouts CASCADE;
 DROP TABLE IF EXISTS balances CASCADE;
 DROP TABLE IF EXISTS customers CASCADE;
 DROP TABLE IF EXISTS products CASCADE;
 DROP TABLE IF EXISTS profiles CASCADE;
 
--- Profiles: stores merchant settings and API keys
-CREATE TABLE IF NOT EXISTS profiles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID UNIQUE NOT NULL,
-  email TEXT,
-  display_name TEXT,
-  api_key TEXT UNIQUE,
-  api_key_created_at TIMESTAMP WITH TIME ZONE,
-  wallet_address TEXT,
-  solana_wallet_address TEXT,
+-- ─── profiles ────────────────────────────────────────────────────────────────
+-- One row per merchant. clerk_user_id is the identity from Clerk.
+-- profiles.id (UUID) is used as owner_id everywhere — never the Clerk string ID.
+CREATE TABLE profiles (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  clerk_user_id          TEXT UNIQUE NOT NULL,
+  email                  TEXT,
+  display_name           TEXT,
+  api_key                TEXT UNIQUE,
+  api_key_created_at     TIMESTAMPTZ,
+  wallet_address         TEXT,
+  solana_wallet_address  TEXT,
   stellar_wallet_address TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  webhook_url            TEXT,
+  webhook_secret         TEXT,
+  plan                   TEXT NOT NULL DEFAULT 'free'
+                           CHECK (plan IN ('free','starter','pro','enterprise')),
+  created_at             TIMESTAMPTZ DEFAULT NOW(),
+  updated_at             TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Products
-CREATE TABLE IF NOT EXISTS products (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id UUID NOT NULL,
-  name TEXT NOT NULL,
+-- ─── products ────────────────────────────────────────────────────────────────
+CREATE TABLE products (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id    UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
   description TEXT,
-  pricing DECIMAL(10,2) NOT NULL,
-  currency TEXT DEFAULT 'USD',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  pricing     DECIMAL(10,2) NOT NULL,
+  currency    TEXT NOT NULL DEFAULT 'USD',
+  active      BOOLEAN NOT NULL DEFAULT true,
+  image_url   TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Customers
-CREATE TABLE IF NOT EXISTS customers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id UUID NOT NULL,
-  name TEXT NOT NULL,
-  email TEXT,
-  total_spent DECIMAL(12,2) DEFAULT 0,
-  total_transactions INT DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- ─── customers ───────────────────────────────────────────────────────────────
+CREATE TABLE customers (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id           UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name               TEXT NOT NULL,
+  email              TEXT,
+  wallet_address     TEXT,
+  total_spent        DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total_transactions INT NOT NULL DEFAULT 0,
+  created_at         TIMESTAMPTZ DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Payment Links
-CREATE TABLE IF NOT EXISTS payment_links (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id UUID NOT NULL,
-  link_name TEXT NOT NULL,
-  payment_link TEXT UNIQUE NOT NULL,
-  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  pricing DECIMAL(10,2) NOT NULL,
-  currency TEXT DEFAULT 'USD',
-  expiry_date TIMESTAMP WITH TIME ZONE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Balances (per chain/token)
-CREATE TABLE IF NOT EXISTS balances (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id UUID NOT NULL,
-  currency TEXT NOT NULL,
-  chain TEXT,
-  amount DECIMAL(38, 18) NOT NULL DEFAULT 0,
-  usd_value DECIMAL(18,2) DEFAULT 0,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Merchant payment configs (multichain/multi-token acceptance)
-CREATE TABLE IF NOT EXISTS merchant_payment_configs (
+-- ─── checkouts ───────────────────────────────────────────────────────────────
+-- Stripe-style hosted checkout sessions. Merchant creates via API, consumer pays via hosted URL.
+CREATE TABLE checkouts (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id     UUID NOT NULL,
+  owner_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  status       TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending','paid','expired','cancelled')),
+  total_amount DECIMAL(12,2) NOT NULL,
+  currency     TEXT NOT NULL DEFAULT 'USD',
+  line_items   JSONB NOT NULL,
+  -- line_items schema: [{ product_id, name, unit_price, qty, subtotal }]
+  success_url  TEXT,
+  cancel_url   TEXT,
+  metadata     JSONB,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  paid_at      TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── payment_links ───────────────────────────────────────────────────────────
+CREATE TABLE payment_links (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  link_name    TEXT NOT NULL,
+  payment_link TEXT UNIQUE NOT NULL,
+  product_id   UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  pricing      DECIMAL(10,2) NOT NULL,
+  currency     TEXT NOT NULL DEFAULT 'USD',
+  expiry_date  TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── balances ────────────────────────────────────────────────────────────────
+CREATE TABLE balances (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  currency     TEXT NOT NULL,
+  chain        TEXT NOT NULL,
+  chain_id     TEXT NOT NULL,
+  amount       DECIMAL(38,18) NOT NULL DEFAULT 0,
+  usd_value    DECIMAL(18,2) NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (owner_id, currency, chain_id)
+);
+
+-- ─── merchant_payment_configs ─────────────────────────────────────────────────
+CREATE TABLE merchant_payment_configs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   chain_id     TEXT NOT NULL,
   token_symbol TEXT NOT NULL,
   asset        TEXT,
   enabled      BOOLEAN NOT NULL DEFAULT true,
-  created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (owner_id, chain_id, token_symbol)
 );
 
--- Transactions
-CREATE TABLE IF NOT EXISTS transactions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id UUID NOT NULL,
-  payment_link_id UUID REFERENCES payment_links(id) ON DELETE SET NULL,
-  type TEXT CHECK (type IN ('payment','withdrawal','deposit')) NOT NULL,
-  status TEXT CHECK (status IN ('pending','processing','completed','failed','blocked','cancelled')) NOT NULL,
-  amount DECIMAL(12,2) NOT NULL,
-  currency TEXT NOT NULL,
-  crypto_amount DECIMAL(38, 18),
-  crypto_currency TEXT,
-  customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
-  tx_hash TEXT,
-  network_fee DECIMAL(12,2),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- ─── transactions ────────────────────────────────────────────────────────────
+CREATE TABLE transactions (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id             UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  payment_link_id      UUID REFERENCES payment_links(id) ON DELETE SET NULL,
+  checkout_id          UUID REFERENCES checkouts(id) ON DELETE SET NULL,
+  customer_id          UUID REFERENCES customers(id) ON DELETE SET NULL,
+  type                 TEXT NOT NULL
+                         CHECK (type IN ('payment','withdrawal','deposit')),
+  status               TEXT NOT NULL
+                         CHECK (status IN
+                           ('pending','processing','completed','failed',
+                            'blocked','cancelled')),
+  amount               DECIMAL(12,2) NOT NULL,
+  currency             TEXT NOT NULL,
+  crypto_amount        DECIMAL(38,18),
+  crypto_currency      TEXT,
+  tx_hash              TEXT,
+  network              TEXT,
+  network_fee          DECIMAL(12,2),
+  wallet_address       TEXT,
+  session_id           TEXT,
+  block_reason         TEXT,
+  risk_score           INT,
+  webhook_delivered_at TIMESTAMPTZ,
+  webhook_attempts     INT NOT NULL DEFAULT 0,
+  webhook_last_error   TEXT,
+  created_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Utility: updated_at trigger
+-- ─── subscriptions (SaaS billing tier tracking) ───────────────────────────────
+CREATE TABLE subscriptions (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id            UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  plan                TEXT NOT NULL DEFAULT 'free'
+                        CHECK (plan IN ('free','starter','pro','enterprise')),
+  status              TEXT NOT NULL DEFAULT 'active'
+                        CHECK (status IN ('active','cancelled','past_due')),
+  current_period_end  TIMESTAMPTZ,
+  stripe_sub_id       TEXT,
+  created_at          TIMESTAMPTZ DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── Indexes ─────────────────────────────────────────────────────────────────
+CREATE INDEX idx_profiles_clerk        ON profiles(clerk_user_id);
+CREATE INDEX idx_profiles_api_key      ON profiles(api_key);
+CREATE INDEX idx_profiles_wallet       ON profiles(wallet_address);
+CREATE INDEX idx_products_owner        ON products(owner_id);
+CREATE INDEX idx_customers_owner       ON customers(owner_id);
+CREATE INDEX idx_checkouts_owner       ON checkouts(owner_id);
+CREATE INDEX idx_checkouts_expires     ON checkouts(expires_at) WHERE status = 'pending';
+CREATE INDEX idx_payment_links_owner   ON payment_links(owner_id);
+CREATE INDEX idx_payment_links_hash    ON payment_links(payment_link);
+CREATE INDEX idx_balances_owner        ON balances(owner_id);
+CREATE INDEX idx_mpc_owner             ON merchant_payment_configs(owner_id);
+CREATE INDEX idx_transactions_owner    ON transactions(owner_id);
+CREATE INDEX idx_transactions_status   ON transactions(status, created_at DESC);
+CREATE INDEX idx_transactions_processing ON transactions(created_at)
+  WHERE status = 'processing';
+CREATE INDEX idx_transactions_webhook  ON transactions(status, webhook_delivered_at, webhook_attempts)
+  WHERE status = 'completed' AND webhook_delivered_at IS NULL;
+CREATE INDEX idx_transactions_session  ON transactions(session_id);
+CREATE INDEX idx_subscriptions_owner   ON subscriptions(owner_id);
+
+-- ─── Triggers ────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ language 'plpgsql';
+BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+$$ LANGUAGE plpgsql;
 
--- Triggers
-CREATE TRIGGER trg_merchant_payment_configs_updated
-BEFORE UPDATE ON merchant_payment_configs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
+CREATE TRIGGER trg_profiles_updated
+  BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_products_updated
-BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
+  BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_customers_updated
-BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
+  BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_payment_links_updated
-BEFORE UPDATE ON payment_links FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  BEFORE UPDATE ON payment_links FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_mpc_updated
+  BEFORE UPDATE ON merchant_payment_configs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_subscriptions_updated
+  BEFORE UPDATE ON subscriptions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_merchant_payment_configs_owner ON merchant_payment_configs(owner_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_wallet ON profiles(wallet_address);
-CREATE INDEX IF NOT EXISTS idx_products_owner ON products(owner_id);
-CREATE INDEX IF NOT EXISTS idx_customers_owner ON customers(owner_id);
-CREATE INDEX IF NOT EXISTS idx_payment_links_owner ON payment_links(owner_id);
-CREATE INDEX IF NOT EXISTS idx_balances_owner ON balances(owner_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_owner ON transactions(owner_id);
-
--- Additive: on-chain confirmation support
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS network TEXT;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS wallet_address TEXT;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS session_id TEXT;
-CREATE INDEX IF NOT EXISTS idx_transactions_processing ON transactions(created_at) WHERE status = 'processing';
-CREATE INDEX IF NOT EXISTS idx_payment_links_link ON payment_links(payment_link);
-
--- Additive: webhook delivery tracking (ZapPay → Lavo Protocol)
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS webhook_delivered_at TIMESTAMPTZ;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS webhook_attempts     INT NOT NULL DEFAULT 0;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS webhook_last_error   TEXT;
-CREATE INDEX IF NOT EXISTS idx_transactions_webhook_pending
-  ON transactions (status, webhook_delivered_at, webhook_attempts)
-  WHERE status = 'completed' AND webhook_delivered_at IS NULL;
-
--- Additive: cart checkout support
-CREATE TABLE IF NOT EXISTS checkouts (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id     UUID NOT NULL REFERENCES profiles(user_id) ON DELETE CASCADE,
-  status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','expired')),
-  total_amount DECIMAL(12,2) NOT NULL,
-  currency     TEXT NOT NULL DEFAULT 'USD',
-  line_items   JSONB NOT NULL,
-  expires_at   TIMESTAMP WITH TIME ZONE NOT NULL,
-  created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS checkout_id UUID REFERENCES checkouts(id) ON DELETE SET NULL;
-CREATE INDEX IF NOT EXISTS idx_checkouts_owner ON checkouts(owner_id);
-CREATE INDEX IF NOT EXISTS idx_checkouts_expires ON checkouts(expires_at) WHERE status = 'pending';
-ALTER TABLE checkouts ENABLE ROW LEVEL SECURITY;
-CREATE POLICY checkouts_select ON checkouts FOR SELECT USING ( is_owner(owner_id) );
-CREATE POLICY checkouts_modify ON checkouts FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
-
--- RLS
-ALTER TABLE merchant_payment_configs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payment_links ENABLE ROW LEVEL SECURITY;
-ALTER TABLE balances ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-
--- Establish ownership FKs to profiles(user_id)
-ALTER TABLE products
-  ADD CONSTRAINT fk_products_owner
-  FOREIGN KEY (owner_id) REFERENCES profiles(user_id) ON DELETE CASCADE;
-
-ALTER TABLE customers
-  ADD CONSTRAINT fk_customers_owner
-  FOREIGN KEY (owner_id) REFERENCES profiles(user_id) ON DELETE CASCADE;
-
-ALTER TABLE payment_links
-  ADD CONSTRAINT fk_payment_links_owner
-  FOREIGN KEY (owner_id) REFERENCES profiles(user_id) ON DELETE CASCADE;
-
-ALTER TABLE balances
-  ADD CONSTRAINT fk_balances_owner
-  FOREIGN KEY (owner_id) REFERENCES profiles(user_id) ON DELETE CASCADE;
-
-ALTER TABLE transactions
-  ADD CONSTRAINT fk_transactions_owner
-  FOREIGN KEY (owner_id) REFERENCES profiles(user_id) ON DELETE CASCADE;
-
-ALTER TABLE merchant_payment_configs
-  ADD CONSTRAINT fk_merchant_payment_configs_owner
-  FOREIGN KEY (owner_id) REFERENCES profiles(user_id) ON DELETE CASCADE;
-
--- Policies: owner-scoped using profiles.user_id = auth.uid()
--- Assume profiles.user_id is the auth uid for the tenant
-
--- Profiles: user can manage own profile
-CREATE POLICY profiles_select ON profiles
-  FOR SELECT USING ( user_id = auth.uid() );
-CREATE POLICY profiles_update ON profiles
-  FOR UPDATE USING ( user_id = auth.uid() );
-CREATE POLICY profiles_insert ON profiles
-  FOR INSERT WITH CHECK ( user_id = auth.uid() );
-
--- Helper function to assert ownership
-CREATE OR REPLACE FUNCTION is_owner(owner UUID)
-RETURNS BOOLEAN AS $$
-BEGIN
-  RETURN owner = auth.uid();
-END; $$ LANGUAGE plpgsql STABLE;
-
--- Products
-CREATE POLICY products_select ON products FOR SELECT USING ( is_owner(owner_id) );
-CREATE POLICY products_modify ON products FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
-
--- Customers
-CREATE POLICY customers_select ON customers FOR SELECT USING ( is_owner(owner_id) );
-CREATE POLICY customers_modify ON customers FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
-
--- Payment Links
-CREATE POLICY payment_links_select ON payment_links FOR SELECT USING ( is_owner(owner_id) );
-CREATE POLICY payment_links_modify ON payment_links FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
-
--- Balances
-CREATE POLICY balances_select ON balances FOR SELECT USING ( is_owner(owner_id) );
-CREATE POLICY balances_modify ON balances FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
-
--- Transactions
-CREATE POLICY transactions_select ON transactions FOR SELECT USING ( is_owner(owner_id) );
-CREATE POLICY transactions_modify ON transactions FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
-
--- Merchant Payment Configs
-CREATE POLICY mpc_select ON merchant_payment_configs FOR SELECT USING ( is_owner(owner_id) );
-CREATE POLICY mpc_modify ON merchant_payment_configs FOR ALL USING ( is_owner(owner_id) ) WITH CHECK ( is_owner(owner_id) );
-
--- API key generation on profiles
+-- ─── API key auto-generation ──────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION generate_profile_api_key()
 RETURNS TRIGGER AS $$
 BEGIN
   IF NEW.api_key IS NULL THEN
-    NEW.api_key := encode(gen_random_bytes(24), 'hex');
+    NEW.api_key := 'zp_live_' || encode(gen_random_bytes(24), 'hex');
     NEW.api_key_created_at := NOW();
   END IF;
   RETURN NEW;
@@ -259,4 +218,18 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_profiles_apikey
-BEFORE INSERT ON profiles FOR EACH ROW EXECUTE FUNCTION generate_profile_api_key();
+  BEFORE INSERT ON profiles FOR EACH ROW EXECUTE FUNCTION generate_profile_api_key();
+
+-- ─── Webhook secret auto-generation ──────────────────────────────────────────
+CREATE OR REPLACE FUNCTION generate_webhook_secret()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.webhook_secret IS NULL THEN
+    NEW.webhook_secret := 'whsec_' || encode(gen_random_bytes(32), 'hex');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_profiles_webhook_secret
+  BEFORE INSERT ON profiles FOR EACH ROW EXECUTE FUNCTION generate_webhook_secret();

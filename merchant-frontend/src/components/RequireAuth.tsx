@@ -1,11 +1,11 @@
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@clerk/clerk-react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 
 export function RequireAuth() {
-  const { user, loading } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
 
-  if (loading) {
+  if (!isLoaded) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoadingSpinner />
@@ -13,8 +13,8 @@ export function RequireAuth() {
     );
   }
 
-  if (!user) {
-    return <Navigate to="/auth" replace />;
+  if (!isSignedIn) {
+    return <Navigate to="/auth/sign-in" replace />;
   }
 
   return <Outlet />;

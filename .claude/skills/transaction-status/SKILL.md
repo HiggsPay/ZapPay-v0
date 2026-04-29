@@ -46,10 +46,11 @@ status TEXT CHECK (status IN ('pending','processing','completed','failed','block
 
 | File | Role |
 |---|---|
-| `server/services/transactionService.ts` | All DB write helpers |
+| `server/services/transactionService.ts` | All DB write helpers (uses shared `supabaseAdmin` from `server/lib/supabase`) |
 | `server/middleware/walletRiskMiddleware.ts` | Writes `blocked` |
 | `server/services/confirmationPoller.ts` | Writes `completed` / `failed` via on-chain check |
 | `server/index.ts` | Route handlers write `processing`; post-settlement interceptor patches `tx_hash` |
+| `server/routes/checkout.ts` | Also writes `processing` via `recordSuccessfulPayment()` for checkout pay |
 | `merchant-frontend/src/pages/Transactions.tsx` | UI — status cards, badge colors, label mapping |
 | `merchant-frontend/src/components/common/StatusBadge.tsx` | Badge color map |
 
@@ -79,6 +80,9 @@ getPendingTransactions(limit?)    // fetches processing rows with non-null tx_ha
 
 ```typescript
 {
+  success: true,
+  transactions: Transaction[],
+  count: number,
   stats: {
     total: number,
     processing: number,
@@ -87,10 +91,13 @@ getPendingTransactions(limit?)    // fetches processing rows with non-null tx_ha
     failed: number,
     blocked: number,
     cancelled: number,
-    totalAmount: number,  // sum of 'processing' rows (until on-chain verification ships)
-  }
+    totalAmount: number,  // sum of completed rows
+  },
+  pagination: { limit, offset, hasMore: boolean }  // note: hasMore not has_more
 }
 ```
+
+Frontend type: `TransactionStats` in `merchant-frontend/src/services/api.ts`. The shape must match exactly — a mismatch causes silent zeroes in the stats cards.
 
 ## Adding a New Status
 

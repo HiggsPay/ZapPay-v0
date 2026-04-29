@@ -1,8 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+import { supabaseAdmin } from "../lib/supabase";
 
 /**
  * Transaction recording service
@@ -275,40 +271,26 @@ export async function getOwnerIdFromPaymentLink(payment_link_id: string): Promis
 
 /**
  * Get owner_id by matching the payTo wallet address in profiles.
- * Falls back to the first profile if no match found.
- * For direct payments not via a payment link.
+ * Returns null if no match — never falls back to an arbitrary profile
+ * since this is a multi-tenant SaaS and attributing to the wrong merchant is unsafe.
  */
 export async function getSystemOwnerId(payToAddress?: string): Promise<string | null> {
+  if (!payToAddress) return null;
   try {
-    // If we know the payTo address, find the merchant who owns it
-    if (payToAddress) {
-      const { data, error } = await supabaseAdmin
-        .from('profiles')
-        .select('user_id')
-        .ilike('wallet_address', payToAddress)
-        .limit(1)
-        .single();
-
-      if (!error && data) {
-        console.log(`📝 Found owner by wallet address: ${data.user_id}`);
-        return data.user_id;
-      }
-    }
-
-    // Fallback: first profile
     const { data, error } = await supabaseAdmin
       .from('profiles')
-      .select('user_id')
+      .select('id')
+      .ilike('wallet_address', payToAddress)
       .limit(1)
       .single();
 
-    if (error || !data) {
-      console.error('❌ No profiles found in database. Cannot record transaction without valid owner_id');
-      return null;
+    if (!error && data) {
+      console.log(`📝 Found owner by wallet address: ${data.id}`);
+      return data.id;
     }
 
-    console.log(`📝 Using first profile as owner_id: ${data.user_id}`);
-    return data.user_id;
+    console.warn(`⚠️ No profile found for wallet ${payToAddress} — payment not attributed`);
+    return null;
   } catch (error) {
     console.error('❌ Error getting system owner_id:', error);
     return null;

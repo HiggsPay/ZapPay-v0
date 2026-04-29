@@ -1,10 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '../lib/supabase';
 import { createHmac } from 'crypto';
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 
 const MAX_ATTEMPTS = 5;
 
@@ -61,7 +56,6 @@ interface FullTransaction {
 }
 
 async function fetchFullTransaction(transactionId: string): Promise<FullTransaction | null> {
-  // First fetch the transaction row
   const { data: tx, error: txError } = await supabaseAdmin
     .from('transactions')
     .select('id, owner_id, payment_link_id, amount, currency, crypto_amount, crypto_currency, tx_hash, network, wallet_address, session_id')
@@ -73,7 +67,6 @@ async function fetchFullTransaction(transactionId: string): Promise<FullTransact
     return null;
   }
 
-  // Fetch payment_link hash if there's a payment_link_id
   let payment_link_hash: string | null = null;
   if (tx.payment_link_id) {
     const { data: link } = await supabaseAdmin
@@ -85,6 +78,26 @@ async function fetchFullTransaction(transactionId: string): Promise<FullTransact
   }
 
   return { ...tx, payment_link_hash };
+}
+
+// ─── Merchant webhook config ──────────────────────────────────────────────────
+
+interface MerchantWebhookConfig {
+  webhook_url: string | null;
+  webhook_secret: string | null;
+}
+
+async function fetchMerchantWebhookConfig(ownerId: string): Promise<MerchantWebhookConfig | null> {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('webhook_url, webhook_secret')
+    .eq('id', ownerId)
+    .single();
+  if (error) {
+    console.error(`[WebhookDispatcher] Failed to fetch webhook config for owner ${ownerId}:`, error.message);
+    return null;
+  }
+  return data ?? null;
 }
 
 // ─── Persistence helpers ──────────────────────────────────────────────────────
@@ -115,16 +128,15 @@ async function incrementAttempt(transactionId: string, errorMsg: string): Promis
 // ─── Single delivery attempt ──────────────────────────────────────────────────
 
 async function deliverOnce(tx: FullTransaction): Promise<{ ok: boolean; retryable: boolean; error?: string }> {
-  const secret = process.env.LAVO_WEBHOOK_SECRET;
-  const webhookUrl = process.env.LAVO_WEBHOOK_URL;
+  const config = await fetchMerchantWebhookConfig(tx.owner_id);
 
-  if (!secret || !webhookUrl) {
-    return { ok: false, retryable: false, error: 'LAVO_WEBHOOK_URL or LAVO_WEBHOOK_SECRET not configured' };
+  if (config === null) {
+    return { ok: false, retryable: true, error: 'Failed to fetch merchant webhook config' };
   }
 
-  // No payment_link_hash means this is a direct/session payment — not linked to Lavo
-  if (!tx.payment_link_hash) {
-    console.log(`[WebhookDispatcher] Skipping ${tx.id}: no payment_link_hash`);
+  // Merchant has no webhook URL configured — skip and mark delivered (no-op)
+  if (!config.webhook_url || !config.webhook_secret) {
+    console.log(`[WebhookDispatcher] Skipping ${tx.id}: no webhook configured for owner ${tx.owner_id}`);
     await markDelivered(tx.id);
     return { ok: true, retryable: false };
   }
@@ -147,10 +159,10 @@ async function deliverOnce(tx: FullTransaction): Promise<{ ok: boolean; retryabl
   };
 
   const rawBody = JSON.stringify(payload);
-  const headers = buildSignedHeaders(rawBody, secret);
+  const headers = buildSignedHeaders(rawBody, config.webhook_secret);
 
   try {
-    const response = await fetch(webhookUrl, {
+    const response = await fetch(config.webhook_url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: rawBody,

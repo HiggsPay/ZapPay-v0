@@ -1,28 +1,62 @@
+import { useState, useEffect } from 'react';
+import { api, type BalanceRow } from '@/services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Wallet, 
-  TrendingUp, 
-  TrendingDown,
-  Download,
-  Send,
-  BanknoteIcon,
+import {
+  Wallet,
+  RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
-import { mockBalances } from '@/data/mockData';
-import { useState } from 'react';
+
+function chainLabel(chainId: string): string {
+  const map: Record<string, string> = {
+    'eip155:84532':   'Base Sepolia',
+    'eip155:8453':    'Base',
+    'eip155:1':       'Ethereum',
+    'solana:devnet':  'Solana Devnet',
+    'solana:mainnet': 'Solana',
+    'stellar:testnet':'Stellar Testnet',
+    'stellar:mainnet':'Stellar',
+  };
+  return map[chainId] ?? chainId;
+}
 
 export function Balance() {
+  const [balances, setBalances] = useState<BalanceRow[]>([]);
+  const [totalUSD, setTotalUSD] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showBalances, setShowBalances] = useState(true);
-  const usdcBalances = mockBalances.filter((balance) => balance.currency === 'USDC' && !!balance.chain);
-  
-  const totalUSDValue = usdcBalances.reduce((sum, balance) => sum + balance.usdValue, 0);
-  const totalChange24h = usdcBalances.reduce((sum, balance) => 
-    sum + (balance.usdValue * balance.change24h / 100), 0
-  );
-  const totalChangePercent = (totalChange24h / totalUSDValue) * 100;
+
+  async function fetchBalances() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.getBalance();
+      setBalances(res.balances ?? []);
+      setTotalUSD(res.total_usd ?? 0);
+    } catch {
+      setError('Failed to load balances.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      await fetchBalances();
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  useEffect(() => { fetchBalances(); }, []);
 
   return (
     <div className="p-4 space-y-8">
@@ -30,23 +64,20 @@ export function Balance() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 text-left">Balance</h1>
-          <p className="text-gray-600 mt-2">
-            Manage your cryptocurrency holdings and wallet balances.
-          </p>
+          <p className="text-gray-600 mt-2">Your cryptocurrency holdings across all chains.</p>
         </div>
-        <div className="flex space-x-3">
-          <Button variant="outline" className="border-amber-300 hover:bg-amber-50">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
-          <Button className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white">
-            <BanknoteIcon className="h-4 w-4 mr-2" />
-            Withdraw All
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          className="border-amber-300 hover:bg-amber-50"
+          onClick={handleSync}
+          disabled={syncing || loading}
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+          Sync
+        </Button>
       </div>
 
-      {/* Total Balance Overview */}
+      {/* Total Portfolio Card */}
       <Card className="border-amber-100 bg-gradient-to-br from-white to-amber-50/30">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -57,7 +88,7 @@ export function Balance() {
             <Button
               variant="ghost"
               size="sm"
-              className="bg-transparent hover:bg-transparent focus:bg-transparent border-none shadow-none text-gray-600 hover:text-gray-900"
+              className="bg-transparent hover:bg-transparent border-none shadow-none text-gray-600 hover:text-gray-900"
               onClick={() => setShowBalances(!showBalances)}
             >
               {showBalances ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
@@ -65,91 +96,68 @@ export function Balance() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-end justify-between">
-              <div className="flex-1"></div>
-              <div className="text-center">
-                <p className="text-3xl font-bold text-gray-900">
-                  {showBalances ? `$${totalUSDValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '••••••'}
-                </p>
-              </div>
-              <div className="text-right flex-1">
-                <div className="flex items-center justify-end">
-                  {totalChangePercent >= 0 ? (
-                    <TrendingUp className="h-4 w-4 text-green-600 mr-1" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4 text-red-600 mr-1" />
-                  )}
-                  <span className={`text-sm font-medium ${
-                    totalChangePercent >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {totalChangePercent >= 0 ? '+' : ''}{totalChangePercent.toFixed(2)}% 
-                    (${totalChange24h >= 0 ? '+' : ''}${totalChange24h.toFixed(2)})
-                  </span>
-                </div>
-              </div>
+          {loading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
             </div>
-            
-            <div className="flex space-x-3 justify-center">
-              <Button className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white">
-                <Send className="h-4 w-4 mr-2" />
-                Send
-              </Button>
-              <Button variant="outline" className="border-amber-300 hover:bg-amber-50">
-                <Download className="h-4 w-4 mr-2" />
-                Receive
-              </Button>
+          ) : error ? (
+            <div className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="h-4 w-4" />
+              <span className="text-sm">{error}</span>
             </div>
-          </div>
+          ) : (
+            <p className="text-3xl font-bold text-gray-900 text-center">
+              {showBalances
+                ? `$${totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : '••••••'}
+            </p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Individual Balances */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {usdcBalances.map((balance) => (
-          <Card key={`${balance.currency}-${balance.chain ?? 'main'}`} className="border-amber-100 bg-gradient-to-br from-white to-amber-50/30 hover:shadow-md transition-shadow">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg font-semibold">
-                  {balance.currency}
-                </CardTitle>
-                <div className="flex items-center space-x-2">
-                  {balance.chain && (
+      {/* Individual balance cards */}
+      {!loading && !error && (
+        balances.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <Wallet className="h-12 w-12 mx-auto mb-4 opacity-30" />
+            <p className="text-sm">No balance records yet.</p>
+            <p className="text-xs mt-1">Balances are recorded as payments come in.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {balances.map((b) => (
+              <Card
+                key={b.id}
+                className="border-amber-100 bg-gradient-to-br from-white to-amber-50/30 hover:shadow-md transition-shadow"
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg font-semibold">{b.currency}</CardTitle>
                     <Badge variant="secondary" className="text-xs capitalize">
-                      {balance.chain}
+                      {chainLabel(b.chain_id)}
                     </Badge>
-                  )}
-                  <Badge variant="outline" className="text-xs">
-                    {balance.symbol}
-                  </Badge>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {showBalances ? balance.amount.toFixed(4) : '••••'}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    {showBalances ? `$${balance.usdValue.toLocaleString()}` : '••••••'}
-                  </p>
-                </div>
-                
-                
-                <div className="flex space-x-2">
-                  <Button size="sm" variant="outline" className="flex-1 border-amber-300 hover:bg-amber-50">
-                    Send
-                  </Button>
-                  <Button size="sm" variant="outline" className="flex-1 border-amber-300 hover:bg-amber-50">
-                    Receive
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-1">
+                    <p className="text-2xl font-bold text-gray-900">
+                      {showBalances ? Number(b.amount).toFixed(4) : '••••'}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {showBalances && b.usd_value != null
+                        ? `≈ $${Number(b.usd_value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : showBalances ? 'USD value unknown' : '••••••'}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      Updated {new Date(b.updated_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )
+      )}
     </div>
   );
 }

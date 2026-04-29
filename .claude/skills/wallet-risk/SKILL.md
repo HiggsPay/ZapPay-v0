@@ -73,18 +73,20 @@ ANALYSIS_ENGINE_URL=http://localhost:3002
 
 ```typescript
 recordBlockedPayment({
-  owner_id,
-  payment_link_id,
+  owner_id,           // profiles.id UUID — from getMerchant(c).profileId or getSystemOwnerId(payTo)
+  payment_link_id,    // optional — only set for payment-link flows
   amount,
   currency,
   crypto_amount,
   crypto_currency: 'USDC',
   wallet_address,
-  block_reason,   // from riskCheck.blockReason or "High-risk wallet detected"
-  risk_score,     // riskAnalysis.riskScore
+  block_reason,       // from riskCheck.blockReason or "High-risk wallet detected"
+  risk_score,         // riskAnalysis.riskScore
 })
 // Writes status = 'blocked' to transactions table
 ```
+
+**Note on `owner_id` for blocked payments:** `getSystemOwnerId(payTo)` resolves the owner by matching `payTo` against `profiles.wallet_address`. It returns `null` if no match — it no longer falls back to the first profile (removed as a multi-tenant leak). If the merchant's EVM wallet address isn't set in their profile, blocked payments for that merchant won't be attributed.
 
 ## Middleware Variants
 

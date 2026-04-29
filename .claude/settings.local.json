@@ -35,7 +35,8 @@
       "Bash(cp -r \"C:/Users/sk_16/Documents/GitHub/ZapPay-v0/.claude/skills/wallet-risk\" \"C:/Users/sk_16/.claude/skills/\")",
       "Bash(cp -r \"C:/Users/sk_16/Documents/GitHub/ZapPay-v0/.claude/skills/payment-flow\" \"C:/Users/sk_16/.claude/skills/\")",
       "Bash(grep -E '\\\\.\\(tsx|ts|json\\)$|^d')",
-      "Bash(npm show *)"
+      "Bash(npm show *)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

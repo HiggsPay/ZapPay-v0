@@ -30,7 +30,7 @@ Use this skill when: implementing x402 payment acceptance, configuring payment m
 | Mainnet | `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | Mainnet |
 | Devnet | `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` | Testnet |
 
-**Register:** `registerExactSolanaScheme(resourceServer)` from `@x402/solana/exact/server`
+**Register:** `registerExactSvmScheme(resourceServer)` from `@x402/svm/exact/server`
 
 ### Stellar (`stellar:*`) — via `@x402/stellar`
 
@@ -39,7 +39,7 @@ Use this skill when: implementing x402 payment acceptance, configuring payment m
 | Pubnet | `stellar:pubnet` | Mainnet |
 | Testnet | `stellar:testnet` | Testnet |
 
-**Register:** `registerExactStellarScheme(resourceServer)` from `@x402/stellar/exact/server`
+**Register:** `new ExactStellarScheme()` + `resourceServer.register("stellar:*", new ExactStellarScheme())` from `@x402/stellar/exact/server`
 
 ---
 
@@ -114,17 +114,19 @@ All chains use `scheme: "exact"`. The underlying mechanism differs per chain fam
 import { x402ResourceServer } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { registerExactEvmScheme } from "@x402/evm/exact/server";
-import { registerExactSolanaScheme } from "@x402/solana/exact/server";
-import { registerExactStellarScheme } from "@x402/stellar/exact/server";
+import { registerExactSvmScheme } from "@x402/svm/exact/server";
+import { ExactStellarScheme } from "@x402/stellar/exact/server";
 
 const facilitatorClient = new HTTPFacilitatorClient({ url: "https://x402.org/facilitator" });
 const resourceServer = new x402ResourceServer(facilitatorClient);
 
 // Register all scheme handlers
 registerExactEvmScheme(resourceServer);
-registerExactSolanaScheme(resourceServer);
-registerExactStellarScheme(resourceServer);
+registerExactSvmScheme(resourceServer);
+resourceServer.register("stellar:*", new ExactStellarScheme());
 ```
+
+> Stellar uses the class-based API (`resourceServer.register`) rather than a `registerExact*` helper function — different from EVM and SVM.
 
 ### Dynamic multi-chain `accepts` array example
 
@@ -175,7 +177,7 @@ One EVM address works for **all EVM chains** — a merchant needs at most 3 addr
 
 ```bash
 npm install @x402/core @x402/hono @x402/evm @x402/axios
-npm install @x402/solana     # for Solana support
+npm install @x402/svm        # for Solana/SVM support
 npm install @x402/stellar    # for Stellar support
 ```
 
@@ -183,14 +185,33 @@ All packages are published on npm (no local vendoring). Install with standard `n
 
 ---
 
-## Import Paths (verify after install)
+## Import Paths
 
-The pattern follows `@x402/<chain>/exact/server`:
+### Server-side (`/exact/server`)
 
 ```typescript
-import { registerExactEvmScheme }     from "@x402/evm/exact/server";
-import { registerExactSolanaScheme }  from "@x402/solana/exact/server";
-import { registerExactStellarScheme } from "@x402/stellar/exact/server";
+import { registerExactEvmScheme } from "@x402/evm/exact/server";
+import { registerExactSvmScheme } from "@x402/svm/exact/server";
+import { ExactStellarScheme }     from "@x402/stellar/exact/server";
+```
+
+### Client-side (`/exact/client`)
+
+```typescript
+import { registerExactEvmScheme } from "@x402/evm/exact/client";
+import { registerExactSvmScheme } from "@x402/svm/exact/client";
+import { ExactStellarScheme }     from "@x402/stellar/exact/client";
+```
+
+**Important:** `@x402/stellar/exact/client` exports `ExactStellarScheme` (class), NOT a `registerExact*` function. Registration on the client uses the same class-based API as the server:
+
+```typescript
+// EVM and SVM use registerExact* helpers:
+registerExactEvmScheme(client, { signer: evmSigner });
+registerExactSvmScheme(client, { signer: svmSigner });
+
+// Stellar uses the class directly (both server and client):
+client.register("stellar:*", new ExactStellarScheme(stellarSigner));
 ```
 
 > **Always verify** the exact export paths from each package's `package.json` exports field after installing — these follow the documented pattern but package internals can shift between minor versions.

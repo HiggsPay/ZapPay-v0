@@ -21,6 +21,8 @@ import {
   Building2,
   Users2,
   Info,
+  ShoppingCart,
+  Webhook,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -51,12 +53,14 @@ const navigation: NavigationItem[] = [
   { name: 'Customers', href: '/customers', icon: Users, demo: true },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Payment Links', href: '/payment-links', icon: Link },
-  { name: 'Plugins', href: '/plugins', icon: Puzzle, comingSoon: true },
-  { name: 'Radar', href: '/radar', icon: Shield, comingSoon: true },
-  { name: 'Analytics', href: '/reporting', icon: BarChart3, comingSoon: true },
-  { name: 'Terminal', href: '/terminal', icon: Monitor, comingSoon: true },
-  { name: 'Billing', href: '/billing', icon: Receipt, comingSoon: true },
+  { name: 'Checkouts', href: '/checkouts', icon: ShoppingCart },
+  // { name: 'Plugins', href: '/plugins', icon: Puzzle, comingSoon: true },
+  // { name: 'Radar', href: '/radar', icon: Shield, comingSoon: true },
+  // { name: 'Analytics', href: '/reporting', icon: BarChart3, comingSoon: true },
+  // { name: 'Terminal', href: '/terminal', icon: Monitor, comingSoon: true },
+  // { name: 'Billing', href: '/billing', icon: Receipt, comingSoon: true },
   { name: 'Settings', href: '/settings', icon: Settings },
+  { name: 'Webhook', href: '/webhook', icon: Webhook },
 ];
 
 interface SidebarProps {
@@ -78,9 +82,9 @@ export function Sidebar({ className }: SidebarProps) {
       {/* Logo */}
       <div className="flex h-14 items-center border-b px-4">
         <div className="flex items-center space-x-2">
-          <img 
-            src="/zappay-logo-white.png" 
-            alt="ZapPay Logo" 
+          <img
+            src="/zappay-logo-white.png"
+            alt="ZapPay Logo"
             className="h-6 w-6 object-contain"
           />
           {!isCollapsed && (
@@ -95,7 +99,7 @@ export function Sidebar({ className }: SidebarProps) {
           {navigation.map((item) => {
             const isActive = location.pathname === item.href;
             const Icon = item.icon;
-            
+
             return (
               <NavLink
                 key={item.name}
@@ -114,11 +118,11 @@ export function Sidebar({ className }: SidebarProps) {
                   <div className="flex items-center justify-between w-full min-w-0">
                     <span className="truncate">{item.name}</span>
                     <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
-                                              {item.demo && (
-                          <Badge variant="outline" className="text-xs bg-amber-50 text-orange-700 border-orange-200">
-                            Demo
-                          </Badge>
-                        )}
+                      {item.demo && (
+                        <Badge variant="outline" className="text-xs bg-amber-50 text-orange-700 border-orange-200">
+                          Demo
+                        </Badge>
+                      )}
                       {item.comingSoon && (
                         <Badge variant="secondary" className="text-xs">
                           Soon
@@ -166,14 +170,14 @@ export function Sidebar({ className }: SidebarProps) {
                 </div>
               </div>
             </DropdownMenuLabel>
-            
+
             <DropdownMenuSeparator />
-            
+
             <DropdownMenuItem onClick={() => navigate('/settings')}>
               <Settings className="mr-2 h-4 w-4" />
               <span>Settings</span>
             </DropdownMenuItem>
-            
+
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <div className="flex items-center w-full">
@@ -202,13 +206,13 @@ export function Sidebar({ className }: SidebarProps) {
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            
+
             <DropdownMenuSeparator />
-            
+
             <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
               Accounts
             </DropdownMenuLabel>
-            
+
             <DropdownMenuItem>
               <div className="flex items-center w-full">
                 <div className="mr-2 h-4 w-4 rounded-full bg-blue-100 flex items-center justify-center">
@@ -217,7 +221,7 @@ export function Sidebar({ className }: SidebarProps) {
                 <span className="flex-1">ZapPay</span>
               </div>
             </DropdownMenuItem>
-            
+
             <DropdownMenuItem>
               <div className="flex items-center w-full">
                 <div className="mr-2 h-4 w-4 rounded-full bg-green-100 flex items-center justify-center">
@@ -226,7 +230,7 @@ export function Sidebar({ className }: SidebarProps) {
                 <span className="flex-1">Demo Account</span>
               </div>
             </DropdownMenuItem>
-            
+
             <DropdownMenuItem>
               <div className="flex items-center w-full">
                 <div className="mr-2 h-4 w-4 rounded-full bg-purple-100 flex items-center justify-center">
@@ -235,9 +239,9 @@ export function Sidebar({ className }: SidebarProps) {
                 <span className="flex-1">Test Account</span>
               </div>
             </DropdownMenuItem>
-            
+
             <DropdownMenuSeparator />
-            
+
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <Plus className="mr-2 h-4 w-4" />
@@ -254,9 +258,9 @@ export function Sidebar({ className }: SidebarProps) {
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            
+
             <DropdownMenuSeparator />
-            
+
             <DropdownMenuItem>
               <div className="flex items-center w-full">
                 <div className="mr-2 h-4 w-4 rounded-full bg-gray-100 flex items-center justify-center">
@@ -275,7 +279,7 @@ export function Sidebar({ className }: SidebarProps) {
                 </TooltipProvider>
               </div>
             </DropdownMenuItem>
-            
+
             <DropdownMenuItem onClick={async () => { await signOut(); navigate('/auth'); }}>
               <LogOut className="mr-2 h-4 w-4" />
               <span>Sign out</span>

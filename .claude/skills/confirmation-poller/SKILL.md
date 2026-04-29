@@ -120,17 +120,12 @@ If `getTransactionReceipt` / `getTransaction` throws a "not found" error AND the
 
 ## Required DB Columns
 
-The poller depends on these columns existing in `transactions`:
+The poller depends on these columns existing in `transactions`. All are first-class columns in the current schema (`server/supabase/supabase-migration.sql`) — no ALTER needed on a fresh DB:
+
 - `tx_hash TEXT` — the on-chain hash (populated by post-settlement interceptor)
 - `network TEXT` — CAIP-2 network id (populated by post-settlement interceptor)
 - `session_id TEXT` — links the route handler to the DB row
 - `wallet_address TEXT` — populated from `SettleResponse.payer`
-
-Migration SQL:
-```sql
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS network TEXT;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS wallet_address TEXT;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS session_id TEXT;
-CREATE INDEX IF NOT EXISTS idx_transactions_processing
-  ON transactions(created_at) WHERE status = 'processing';
-```
+- `checkout_id UUID` — links to `checkouts.id` when the payment came via a checkout session
+- `block_reason TEXT` — set on `blocked` transactions
+- `risk_score INT` — set on `blocked` transactions

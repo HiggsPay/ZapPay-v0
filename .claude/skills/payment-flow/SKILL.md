@@ -83,7 +83,7 @@ settle.success      // boolean
 
 Merchant sets their wallet address in their profile (`wallet_address` in `profiles` table). The middleware looks up the merchant's config and sets `payTo` dynamically per request.
 
-Call `invalidateCache(userId)` after any profile wallet address update.
+Call `invalidateCache(profileId)` after any profile wallet address update. (`profileId` = `profiles.id` UUID, not Clerk user string.)
 
 ## Sessions (In-Memory)
 
@@ -109,18 +109,36 @@ Check session validity: `GET /api/session/:sessionId`
 3. Add the route handler — call `recordSuccessfulPayment()` and `c.set('lastSessionId', sessionId)`
 4. The poller will automatically pick up `processing` rows for the new endpoint
 
+## Checkout Pay Flow (Stripe-style)
+
+`POST /api/checkout/pay` is a separate pay endpoint for checkout sessions (not payment links). It goes through the same middleware stack:
+
+```
+[1] walletRiskMiddleware        (app.use "/api/checkout/pay")
+[2] createCheckoutPaymentMiddleware  (app.use "/api/checkout/pay") — dynamic payTo from checkout.owner_id
+[3] Route handler               (server/routes/checkout.ts)
+      ↳ marks checkout status = 'paid'
+      ↳ recordSuccessfulPayment() → status = 'processing'
+      ↳ links transaction to checkout via checkout_id
+[4] Post-settlement interceptor (app.use "/api/checkout/pay")
+      ↳ patches tx_hash + network via updateTransactionBySessionId()
+```
+
+Consumer sends `X-Checkout-Id` header to identify which checkout to settle.
+
 ## Key Files
 
 | File | Role |
 |---|---|
-| `server/index.ts` | All route handlers, middleware wiring, poller startup |
+| `server/index.ts` | Middleware wiring, pay endpoint handlers, poller startup |
+| `server/routes/checkout.ts` | Checkout CRUD + `/api/checkout/pay` handler |
 | `server/middleware/dynamicPaymentMiddleware.ts` | Per-merchant price/wallet config |
 | `server/middleware/walletRiskMiddleware.ts` | Pre-payment risk gate |
-| `server/services/transactionService.ts` | All DB transaction writes |
+| `server/services/transactionService.ts` | All DB transaction writes (imports from `server/lib/supabase`) |
 | `server/services/confirmationPoller.ts` | Background on-chain confirmation |
 | `server/services/riskService.ts` | Analysis-engine HTTP client |
-| `merchant-frontend/src/pages/ZapPayUI.tsx` | Public payment page |
-| `merchant-frontend/src/services/api.ts` | `api.purchase24HourSession()`, `api.purchaseOneTimeAccess()` |
+| `merchant-frontend/src/pages/ZapPayUI.tsx` | Public payment page (payment links + checkout sessions) |
+| `merchant-frontend/src/services/api.ts` | `api.purchase24HourSession()`, `api.purchaseOneTimeAccess()`, `api.payCheckout()` |
 
 ## Facilitator
 

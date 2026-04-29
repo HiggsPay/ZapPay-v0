@@ -30,7 +30,7 @@ async function getMerchantAccepts(
     supabaseAdmin
       .from("profiles")
       .select("wallet_address, solana_wallet_address, stellar_wallet_address")
-      .eq("user_id", ownerId)
+      .eq("id", ownerId)
       .single(),
     supabaseAdmin
       .from("merchant_payment_configs")
@@ -121,10 +121,10 @@ export function createDynamicPaymentMiddleware(
     if (!ownerId) {
       const { data } = await supabaseAdmin
         .from("profiles")
-        .select("user_id")
+        .select("id")
         .limit(1)
         .single();
-      ownerId = data?.user_id ?? null;
+      ownerId = data?.id ?? null;
     }
 
     if (!ownerId) return c.json({ error: "Merchant not found" }, 500);
@@ -132,7 +132,10 @@ export function createDynamicPaymentMiddleware(
     const accepts = await getMerchantAccepts(supabaseAdmin, ownerId, price);
 
     if (!accepts?.length) {
-      return next();
+      return c.json({
+        error: "Merchant has not configured any payment methods. Please set up accepted chains and tokens in Settings.",
+        code: "MERCHANT_PAYMENT_CONFIG_MISSING",
+      }, 402);
     }
 
     const dynamicMiddleware = paymentMiddleware(

@@ -16,7 +16,7 @@ import type { AxiosInstance } from "axios";
 import { x402Client, wrapAxiosWithPayment } from "@x402/axios";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { registerExactSvmScheme } from "@x402/svm/exact/client";
-import { registerExactStellarScheme } from "@x402/stellar/exact/client";
+import { ExactStellarScheme } from "@x402/stellar/exact/client";
 import { requestAccess, getAddress, signTransaction as freighterSignTx } from "@stellar/freighter-api";
 import { useWallet } from '@/contexts/WalletContext';
 import { api } from '@/services/api';
@@ -87,7 +87,7 @@ function buildPaymentClient(
     }
     if (option.chain_family === 'stellar' && stellarAddress) {
       const client = new x402Client();
-      registerExactStellarScheme(client, { signer: toStellarSigner(stellarAddress) });
+      client.register("stellar:*", new ExactStellarScheme(toStellarSigner(stellarAddress)));
       return wrapAxiosWithPayment(baseApiClient, client);
     }
   } catch (err) {
@@ -144,10 +144,12 @@ const legacyApi = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ZapPayUI() {
-  const { paymentLink } = useParams<{ paymentLink: string }>();
+  // paymentLink → /payment/:paymentLink
+  // checkoutId  → /c/:checkoutId  OR  ?checkout_id= (legacy)
+  const { paymentLink, checkoutId: checkoutIdParam } = useParams<{ paymentLink?: string; checkoutId?: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const checkoutId = searchParams.get('checkout_id');
+  const checkoutId = checkoutIdParam ?? searchParams.get('checkout_id');
   const isCartMode = Boolean(checkoutId);
 
   const { isConnected: isEvmConnected, address: evmAddress, walletClient, error: walletError, isConnecting, connectWallet, disconnectWallet } = useWallet();

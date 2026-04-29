@@ -1,12 +1,8 @@
-import type { 
-  Transaction, 
-  Balance, 
-  Customer, 
-  Product, 
-  PaymentLink, 
-  RadarAlert, 
+import type {
+  Transaction,
+  Customer,
   DashboardStats,
-  ChartData 
+  ChartData
 } from '@/types';
 
 // Mock Transactions
@@ -93,50 +89,6 @@ export const mockTransactions: Transaction[] = [
   }
 ];
 
-// Mock Balances
-export const mockBalances: Balance[] = [
-  {
-    currency: 'USDC',
-    amount: 1500.25,
-    usdValue: 1500.25,
-    change24h: 0.00,
-    symbol: '$',
-    chain: 'base'
-  },
-  {
-    currency: 'USDC',
-    amount: 800.00,
-    usdValue: 800.00,
-    change24h: 0.00,
-    symbol: '$',
-    chain: 'scroll'
-  },
-  {
-    currency: 'USDC',
-    amount: 1200.50,
-    usdValue: 1200.50,
-    change24h: 0.00,
-    symbol: '$',
-    chain: 'sei'
-  },
-  {
-    currency: 'USDC',
-    amount: 900.75,
-    usdValue: 900.75,
-    change24h: 0.00,
-    symbol: '$',
-    chain: 'scroll'
-  },
-  {
-    currency: 'USDC',
-    amount: 650.00,
-    usdValue: 650.00,
-    change24h: 0.00,
-    symbol: '$',
-    chain: 'scrollTestnet'
-  }
-];
-
 // Mock Customers
 export const mockCustomers: Customer[] = [
   {
@@ -174,128 +126,6 @@ export const mockCustomers: Customer[] = [
     totalTransactions: 3,
     lastSeen: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
     status: 'inactive'
-  }
-];
-
-// Mock Products
-export const mockProducts: Product[] = [
-  {
-    id: 'prod-001',
-    name: 'Premium Wireless Headphones',
-    price: 299.99,
-    currency: 'USD',
-    category: 'Electronics',
-    stock: 45,
-    status: 'active'
-  },
-  {
-    id: 'prod-002',
-    name: 'Organic Cotton T-Shirt',
-    price: 49.99,
-    currency: 'USD',
-    category: 'Apparel',
-    stock: 120,
-    status: 'active'
-  },
-  {
-    id: 'prod-003',
-    name: 'Smart Watch Pro',
-    price: 399.99,
-    currency: 'USD',
-    category: 'Electronics',
-    stock: 0,
-    status: 'out_of_stock'
-  },
-  {
-    id: 'prod-004',
-    name: 'Artisan Coffee Blend',
-    price: 24.99,
-    currency: 'USD',
-    category: 'Food & Beverage',
-    stock: 78,
-    status: 'active'
-  }
-];
-
-// Mock Payment Links
-export const mockPaymentLinks: PaymentLink[] = [
-  {
-    id: 'link-001',
-    name: 'Premium Membership',
-    description: 'Monthly premium subscription',
-    amount: 29.99,
-    currency: 'USD',
-    url: 'https://pay.merchant.com/session',
-    isActive: true,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
-    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
-    totalPaid: 899.70,
-    clickCount: 156
-  },
-  {
-    id: 'link-002',
-    name: 'Digital Product Bundle',
-    description: 'Complete digital course package',
-    amount: 199.99,
-    currency: 'USD',
-    url: 'https://pay.merchant.com/digital-bundle',
-    isActive: true,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-    totalPaid: 1999.90,
-    clickCount: 89
-  },
-  {
-    id: 'link-003',
-    name: 'Consultation Fee',
-    description: '1-hour business consultation',
-    amount: 150.00,
-    currency: 'USD',
-    url: 'https://pay.merchant.com/consultation',
-    isActive: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString(),
-    totalPaid: 450.00,
-    clickCount: 23
-  }
-];
-
-// Mock Radar Alerts
-export const mockRadarAlerts: RadarAlert[] = [
-  {
-    id: 'alert-001',
-    type: 'fraud',
-    severity: 'high',
-    title: 'Suspicious Payment Pattern Detected',
-    description: 'Multiple failed transactions from IP 192.168.1.100 in last hour',
-    timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-    isResolved: false,
-    relatedTransaction: 'tx-005'
-  },
-  {
-    id: 'alert-002',
-    type: 'security',
-    severity: 'medium',
-    title: 'Unusual Login Location',
-    description: 'Login attempt from new geographic location (Tokyo, Japan)',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    isResolved: true
-  },
-  {
-    id: 'alert-003',
-    type: 'compliance',
-    severity: 'low',
-    title: 'KYC Document Expiring Soon',
-    description: 'Customer verification documents will expire in 30 days',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    isResolved: false
-  },
-  {
-    id: 'alert-004',
-    type: 'risk',
-    severity: 'critical',
-    title: 'Large Transaction Volume Alert',
-    description: 'Daily transaction volume exceeds 150% of normal average',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-    isResolved: false
   }
 ];
 

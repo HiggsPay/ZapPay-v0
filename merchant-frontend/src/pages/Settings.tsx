@@ -15,20 +15,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { api, type TokenConfig } from '@/services/api';
 
 type ChainFamily = 'evm' | 'solana' | 'stellar';
 
 interface TokenKey {
-  chain_id: string;
-  token_symbol: string;
+  chain_id?: string;
+  chainId?: string;
+  token_symbol?: string;
+  tokenSymbol?: string;
 }
 
 function tokenKey(t: TokenKey): string {
-  return `${t.chain_id}:${t.token_symbol}`;
+  const chainId = t.chain_id ?? t.chainId ?? '';
+  const symbol = t.token_symbol ?? t.tokenSymbol ?? '';
+  return `${chainId}:${symbol}`;
 }
 
 function groupByChain(tokens: TokenConfig[]): Map<string, TokenConfig[]> {
@@ -54,7 +56,6 @@ function isValidStellarAddress(v: string) {
 }
 
 export function Settings() {
-  const { user } = useAuth();
   const { toast } = useToast();
 
   const [supported, setSupported] = useState<TokenConfig[]>([]);
@@ -84,17 +85,12 @@ export function Settings() {
   const [stellarError, setStellarError] = useState('');
 
   useEffect(() => {
-    if (!user) return;
     async function load() {
       try {
         const [tokensRes, configRes, profileRes] = await Promise.all([
           api.getSupportedTokens(),
           api.getPaymentConfig(),
-          supabase
-            .from('profiles')
-            .select('wallet_address, solana_wallet_address, stellar_wallet_address')
-            .eq('user_id', user!.id)
-            .single(),
+          api.getProfile(),
         ]);
 
         setSupported(tokensRes.supported);
@@ -104,27 +100,24 @@ export function Settings() {
         );
         setEnabled(enabledSet);
 
-        if (profileRes.data) {
-          const { wallet_address, solana_wallet_address, stellar_wallet_address } = profileRes.data;
-          setSavedEvmWallet(wallet_address ?? '');
-          setSavedSolanaWallet(solana_wallet_address ?? '');
-          setSavedStellarWallet(stellar_wallet_address ?? '');
+        const { wallet_address, solana_wallet_address, stellar_wallet_address } = profileRes.profile;
+        setSavedEvmWallet(wallet_address ?? '');
+        setSavedSolanaWallet(solana_wallet_address ?? '');
+        setSavedStellarWallet(stellar_wallet_address ?? '');
 
-          // Auto-enable family toggles if wallet already saved or tokens already enabled
-          const hasEvmTokens = (configRes.configs ?? []).some((c: { chain_id: string }) => c.chain_id.startsWith('eip155:'));
-          const hasSolanaTokens = (configRes.configs ?? []).some((c: { chain_id: string }) => c.chain_id.startsWith('solana:'));
-          const hasStellarTokens = (configRes.configs ?? []).some((c: { chain_id: string }) => c.chain_id.startsWith('stellar:'));
+        const hasEvmTokens = (configRes.configs ?? []).some((c: { chain_id: string }) => c.chain_id.startsWith('eip155:'));
+        const hasSolanaTokens = (configRes.configs ?? []).some((c: { chain_id: string }) => c.chain_id.startsWith('solana:'));
+        const hasStellarTokens = (configRes.configs ?? []).some((c: { chain_id: string }) => c.chain_id.startsWith('stellar:'));
 
-          setEvmEnabled(!!wallet_address || hasEvmTokens);
-          setSolanaEnabled(!!solana_wallet_address || hasSolanaTokens);
-          setStellarEnabled(!!stellar_wallet_address || hasStellarTokens);
-        }
+        setEvmEnabled(!!wallet_address || hasEvmTokens);
+        setSolanaEnabled(!!solana_wallet_address || hasSolanaTokens);
+        setStellarEnabled(!!stellar_wallet_address || hasStellarTokens);
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [user]);
+  }, []);
 
   function toggleToken(t: TokenConfig) {
     // Prevent disabling a token if it was previously saved
