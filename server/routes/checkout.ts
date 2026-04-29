@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { v4 as uuidv4 } from "uuid";
-import { clerkAuthMiddleware, getMerchant } from "../middleware/clerkAuth";
+import { getMerchant } from "../middleware/clerkAuth";
+import { clerkOrApiKeyMiddleware } from "../middleware/apiKeyAuth";
 import { supabaseAdmin } from "../lib/supabase";
 import { getTokenConfig } from "../tokenRegistry";
 import { recordSuccessfulPayment } from "../services/transactionService";
@@ -9,7 +10,7 @@ type Vars = { merchant?: unknown; lastSessionId?: string };
 const app = new Hono<{ Variables: Vars }>();
 
 // ── Authenticated: create checkout session ────────────────────────────────────
-app.post("/api/checkout", clerkAuthMiddleware, async (c) => {
+app.post("/api/checkout", clerkOrApiKeyMiddleware, async (c) => {
   try {
     const { profileId } = getMerchant(c);
     const body = await c.req.json() as {
@@ -97,7 +98,7 @@ app.post("/api/checkout", clerkAuthMiddleware, async (c) => {
 });
 
 // ── Authenticated: list merchant's checkout sessions ─────────────────────────
-app.get("/api/checkouts", clerkAuthMiddleware, async (c) => {
+app.get("/api/checkouts", clerkOrApiKeyMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const status = c.req.query("status");
   const limit = Math.min(parseInt(c.req.query("limit") || "20"), 100);
@@ -140,7 +141,7 @@ app.get("/api/checkouts", clerkAuthMiddleware, async (c) => {
 });
 
 // ── Authenticated: get single checkout ───────────────────────────────────────
-app.get("/api/checkout/:id", clerkAuthMiddleware, async (c) => {
+app.get("/api/checkout/:id", clerkOrApiKeyMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const checkoutId = c.req.param("id");
 
@@ -168,7 +169,7 @@ app.get("/api/checkout/:id", clerkAuthMiddleware, async (c) => {
 });
 
 // ── Authenticated: expire a checkout manually ─────────────────────────────────
-app.post("/api/checkout/:id/expire", clerkAuthMiddleware, async (c) => {
+app.post("/api/checkout/:id/expire", clerkOrApiKeyMiddleware, async (c) => {
   const { profileId } = getMerchant(c);
   const checkoutId = c.req.param("id");
 

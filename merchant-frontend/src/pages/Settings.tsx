@@ -262,16 +262,23 @@ export function Settings() {
   const stellarByChain = groupByChain(stellarTokens);
 
   if (loading) {
-    return <div className="p-6 text-muted-foreground">Loading…</div>;
+    return (
+      <div className="p-6 flex items-center space-x-2 text-gray-500">
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
+        <span>Loading…</span>
+      </div>
+    );
   }
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Payment Settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Configure which chains and tokens you accept. Wallet addresses are permanent once saved — contact admin to change them.
-        </p>
+    <div className="p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 text-left">Payment Settings</h1>
+          <p className="text-gray-600 mt-2">
+            Configure which chains and tokens you accept. Wallet addresses are permanent once saved — contact admin to change them.
+          </p>
+        </div>
       </div>
 
       {/* Chain family toggles + wallet inputs */}
@@ -499,7 +506,11 @@ export function Settings() {
             )}
 
             <div className="pt-2">
-              <Button onClick={handleSaveClick} disabled={saving} className="w-full sm:w-auto">
+              <Button
+                onClick={handleSaveClick}
+                disabled={saving}
+                className="w-full sm:w-auto bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white"
+              >
                 {saving ? 'Saving…' : 'Save Payment Settings'}
               </Button>
             </div>

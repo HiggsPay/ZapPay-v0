@@ -19,6 +19,8 @@ ZapPay uses **two IDs** — never confuse them:
 
 ## Auth Middleware (Server)
 
+### Clerk JWT (`clerkAuth.ts`)
+
 ```typescript
 // server/middleware/clerkAuth.ts
 import { verifyToken } from "@clerk/backend";  // top-level export, NOT a method on ClerkClient
@@ -40,6 +42,40 @@ export function getMerchant(c: Context): MerchantContext {
 **`getMerchant(c).profileId`** is the UUID to use as `owner_id` in all queries.
 
 Auto-provisioning: if no profile row exists for a Clerk user, the middleware creates one using `clerkClient.users.getUser()` to pull email + display name.
+
+### API Key (`apiKeyAuth.ts`)
+
+```typescript
+// server/middleware/apiKeyAuth.ts
+
+// Resolves X-API-Key: zp_live_... → same MerchantContext shape as Clerk middleware.
+export async function apiKeyAuthMiddleware(c: Context, next: Next) {
+  const key = c.req.header("X-API-Key");
+  if (!key?.startsWith("zp_live_")) return c.json({ error: "Invalid or missing X-API-Key" }, 401);
+
+  const { data: profile } = await supabaseAdmin
+    .from("profiles").select("id, plan").eq("api_key", key).single();
+
+  if (!profile) return c.json({ error: "Invalid API key" }, 401);
+
+  c.set("merchant", { profileId: profile.id, clerkUserId: "", plan: profile.plan });
+  return next();
+}
+
+// Use on routes that should accept either auth method:
+export async function clerkOrApiKeyMiddleware(c: Context, next: Next) {
+  if (c.req.header("X-API-Key")) return apiKeyAuthMiddleware(c, next);
+  const { clerkAuthMiddleware } = await import("./clerkAuth");
+  return clerkAuthMiddleware(c, next);
+}
+```
+
+**Key facts:**
+- API keys are stored in `profiles.api_key` with prefix `zp_live_`
+- `clerkUserId` is set to `""` (empty string) for API key auth — do not rely on it downstream
+- `getMerchant(c).profileId` works identically regardless of which auth method was used
+- Use `clerkOrApiKeyMiddleware` on routes that should be accessible both from the dashboard (Clerk) and programmatically (API key)
+- Use `apiKeyAuthMiddleware` directly on routes that are API-only (no browser dashboard use)
 
 ---
 
@@ -116,7 +152,7 @@ server/routes/
   risk.ts            GET /api/risk/wallet/:address
 ```
 
-All merchant routes require `clerkAuthMiddleware`. Mount pattern in `server/index.ts`:
+Merchant routes use `clerkAuthMiddleware` (dashboard) or `clerkOrApiKeyMiddleware` (dashboard + API key). Mount pattern in `server/index.ts`:
 ```typescript
 app.route("/", profileRoutes);
 app.route("/", transactionsRoutes);
@@ -241,3 +277,5 @@ No `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` — those are gone.
 | Calling `verifyToken` as `clerkClient.verifyToken()` | Import `verifyToken` from `"@clerk/backend"` directly |
 | Direct Supabase queries from frontend | All data through server API with Clerk JWT |
 | Assuming RLS protects data | Always add `.eq("owner_id", profileId)` in server queries |
+| Using `clerkAuthMiddleware` on routes that need API key access | Use `clerkOrApiKeyMiddleware` instead |
+| Checking `getMerchant(c).clerkUserId` after API key auth | It's `""` for API key auth — use `profileId` only |

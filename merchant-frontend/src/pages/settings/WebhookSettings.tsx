@@ -198,7 +198,12 @@ export function WebhookSettings({ initialWebhookUrl }: Props) {
 
         {/* Action row */}
         <div className="flex items-center gap-3 flex-wrap">
-          <Button onClick={handleSave} disabled={saving} size="sm">
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            size="sm"
+            className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white"
+          >
             {saving ? 'Saving…' : 'Save Endpoint'}
           </Button>
           {savedWebhookUrl && (

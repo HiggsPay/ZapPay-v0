@@ -14,7 +14,6 @@ import {
   Copy,
   ExternalLink,
   AlertCircle,
-  BarChart3,
   ChevronDown,
   X,
   ArrowUp,

@@ -8,12 +8,7 @@ import {
   CreditCard,
   Users,
   Package,
-  Shield,
   Link,
-  Puzzle,
-  BarChart3,
-  Monitor,
-  Receipt,
   ChevronDown,
   Settings,
   LogOut,
@@ -23,6 +18,7 @@ import {
   Info,
   ShoppingCart,
   Webhook,
+  KeyRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -61,6 +57,7 @@ const navigation: NavigationItem[] = [
   // { name: 'Billing', href: '/billing', icon: Receipt, comingSoon: true },
   { name: 'Settings', href: '/settings', icon: Settings },
   { name: 'Webhook', href: '/webhook', icon: Webhook },
+  { name: 'API Key', href: '/api-key', icon: KeyRound },
 ];
 
 interface SidebarProps {

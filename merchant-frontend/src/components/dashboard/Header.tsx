@@ -1,4 +1,4 @@
-import { Bell, Search, Menu, Grid3X3, HelpCircle, Plus } from 'lucide-react';
+import { Bell, Search, Menu, Grid3X3, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {

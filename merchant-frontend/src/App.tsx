@@ -15,6 +15,7 @@ import { Billing } from '@/pages/Billing';
 import { ZapPayUI } from '@/pages/ZapPayUI';
 import { RequireAuth } from '@/components/RequireAuth';
 import { Settings } from '@/pages/Settings';
+import { ApiKey } from '@/pages/ApiKey';
 import { Webhook } from '@/pages/Webhook';
 import { Checkouts } from '@/pages/Checkouts';
 import { WalletProvider } from '@/contexts/WalletContext';
@@ -67,6 +68,7 @@ function App() {
               <Route path="billing" element={<Billing />} />
               <Route path="settings" element={<Settings />} />
               <Route path="webhook" element={<Webhook />} />
+              <Route path="api-key" element={<ApiKey />} />
             </Route>
           </Route>
 
