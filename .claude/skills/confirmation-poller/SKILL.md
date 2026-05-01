@@ -37,6 +37,7 @@ process.on('SIGINT',  () => { stopPoller(); process.exit(0); });
 |---|---|---|
 | Ethereum | `eip155:1` | `RPC_URL_ETHEREUM` |
 | Base | `eip155:8453` | `RPC_URL_BASE` |
+| Base Sepolia | `eip155:84532` | `RPC_URL_BASE_SEPOLIA` |
 | Polygon | `eip155:137` | `RPC_URL_POLYGON` |
 | Arbitrum | `eip155:42161` | `RPC_URL_ARBITRUM` |
 | Optimism | `eip155:10` | `RPC_URL_OPTIMISM` |
@@ -67,6 +68,7 @@ Confirmation method: `server.transactions().transaction(hash).call()` → `resul
 ```
 RPC_URL_ETHEREUM=https://eth.llamarpc.com
 RPC_URL_BASE=https://mainnet.base.org
+RPC_URL_BASE_SEPOLIA=https://sepolia.base.org
 RPC_URL_POLYGON=https://polygon-rpc.com
 RPC_URL_ARBITRUM=https://arb1.arbitrum.io/rpc
 RPC_URL_OPTIMISM=https://mainnet.optimism.io
@@ -101,9 +103,28 @@ This header is set **after** the route handler exits (in the middleware's post-`
 // In server/index.ts — registered AFTER paymentMiddleware
 app.use("/api/pay/session",  async (c, next) => { await next(); await captureSettlementData(c); });
 app.use("/api/pay/onetime",  async (c, next) => { await next(); await captureSettlementData(c); });
+app.use("/api/checkout/pay", async (c, next) => { await next(); await captureSettlementData(c); });
 ```
 
 `captureSettlementData()` calls `updateTransactionBySessionId()` to patch `tx_hash`, `network`, and `wallet_address` onto the row using `session_id` as the lookup key.
+
+### Hono Sub-App Context Isolation — Critical Gotcha
+
+When route modules are mounted with `app.route("/", subApp)`, **`c.set(...)` inside the sub-app does NOT propagate to the parent app's context** — and vice versa. This means `c.get("lastSessionId")` read inside `captureSettlementData` (which runs in `index.ts`) will always be `undefined` if `c.set("lastSessionId", ...)` was called inside a sub-app route handler (e.g. `checkout.ts`).
+
+**The workaround:** sub-app route handlers that need to pass a value to the parent interceptor do so via an HTTP response header rather than a context variable. `checkout.ts` sets `"X-Session-Id": sessionId` on the response; `captureSettlementData` reads it as a fallback:
+
+```typescript
+// checkout.ts — route handler
+return c.json({ ... }, 200, { "X-Session-Id": sessionId });
+
+// index.ts — captureSettlementData
+const sessionId = c.get("lastSessionId") || c.res.headers.get("X-Session-Id");
+```
+
+**Root effect of this bug if missed:** transaction row has `tx_hash = null` and `network = null` → `getPendingTransactions()` filters these out (`NOT NULL` check) → poller never picks the row up → status stays `processing` forever.
+
+**Manual recovery for stuck rows:** In Supabase, directly set `status = 'completed'` on any `processing` transaction with a null `tx_hash` that you know settled on-chain.
 
 ## Adding a New EVM Chain
 

@@ -335,7 +335,7 @@ app.post("/api/checkout/pay", async (c) => {
       currency: checkout.currency,
       purchased: checkout.line_items,
       redirect_url: checkout.success_url ?? null,
-    });
+    }, 200, { "X-Session-Id": sessionId });
   } catch (err: any) {
     console.error("❌ POST /api/checkout/pay:", err);
     return c.json({ error: "Payment failed" }, 500);

@@ -98,32 +98,54 @@ registerExactEvmScheme(resourceServer);
 registerExactSvmScheme(resourceServer);
 resourceServer.register("stellar:*", new ExactStellarScheme());
 
-// ── Payment middleware stack ───────────────────────────────────────────────────
-app.use("/api/pay/*", walletRiskMiddleware);
-app.use("/api/pay/session", createDynamicPaymentMiddleware("/api/pay/session", "$1.00", resourceServer, supabaseAdmin));
-app.use("/api/pay/onetime", createDynamicPaymentMiddleware("/api/pay/onetime", "$0.10", resourceServer, supabaseAdmin));
-app.use("/api/checkout/pay", walletRiskMiddleware);
-app.use("/api/checkout/pay", createCheckoutPaymentMiddleware(resourceServer, supabaseAdmin));
+// Fetch facilitator-supported networks once at startup so middleware can filter accepts
+let facilitatorSupportedNetworks = new Set<string>();
+try {
+  const supported = await facilitatorClient.getSupported();
+  facilitatorSupportedNetworks = new Set(supported.kinds.map((k: any) => k.network as string));
+  console.log(`✅ Facilitator supports networks: ${[...facilitatorSupportedNetworks].join(", ")}`);
+} catch (err: any) {
+  console.warn(`⚠️  Could not fetch facilitator supported networks: ${err.message}. All merchant networks will be attempted.`);
+}
 
-// Post-settlement interceptor — captures tx_hash from PAYMENT-RESPONSE header
+// Post-settlement interceptor — captures tx_hash from PAYMENT-RESPONSE header.
+// MUST be registered BEFORE the payment middleware so it becomes the outer wrapper.
+// Outer wrappers run their post-next() code AFTER inner middleware (x402) has finished
+// setting the PAYMENT-RESPONSE header.
 async function captureSettlementData(c: any): Promise<void> {
   if (c.res.status >= 400) return;
   const raw = c.res.headers.get("PAYMENT-RESPONSE");
-  if (!raw) return;
+  if (!raw) {
+    console.log("[capture] no PAYMENT-RESPONSE header — skipping");
+    return;
+  }
   try {
     const settle = JSON.parse(Buffer.from(raw, "base64").toString("utf-8"));
+    console.log("[capture] settle:", JSON.stringify(settle));
     if (!settle?.success || !settle?.transaction) return;
-    const sessionId = c.get("lastSessionId");
+    // c.get("lastSessionId") works for inline route handlers (api/pay/*).
+    // For sub-app routes (checkout.ts), the session ID is passed via X-Session-Id response header.
+    const sessionId = c.get("lastSessionId") || c.res.headers.get("X-Session-Id");
+    console.log("[capture] sessionId:", sessionId);
     if (!sessionId) return;
     await updateTransactionBySessionId(sessionId, settle.transaction, settle.network, settle.payer);
+    console.log("[capture] ✅ patched tx_hash onto session", sessionId);
   } catch (err: any) {
     console.error("❌ captureSettlementData:", err.message);
   }
 }
 
+// ── Payment middleware stack ───────────────────────────────────────────────────
+// Interceptors registered FIRST = outermost layer = post-next() runs LAST (after x402 sets headers)
 app.use("/api/pay/session",  async (c, next) => { await next(); await captureSettlementData(c); });
 app.use("/api/pay/onetime",  async (c, next) => { await next(); await captureSettlementData(c); });
 app.use("/api/checkout/pay", async (c, next) => { await next(); await captureSettlementData(c); });
+
+app.use("/api/pay/*", walletRiskMiddleware);
+app.use("/api/pay/session", createDynamicPaymentMiddleware("/api/pay/session", "$1.00", resourceServer, supabaseAdmin, facilitatorSupportedNetworks));
+app.use("/api/pay/onetime", createDynamicPaymentMiddleware("/api/pay/onetime", "$0.10", resourceServer, supabaseAdmin, facilitatorSupportedNetworks));
+app.use("/api/checkout/pay", walletRiskMiddleware);
+app.use("/api/checkout/pay", createCheckoutPaymentMiddleware(resourceServer, supabaseAdmin, facilitatorSupportedNetworks));
 
 // ── Paid endpoints (session / onetime) ───────────────────────────────────────
 app.post("/api/pay/session", async (c) => {

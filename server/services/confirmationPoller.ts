@@ -1,5 +1,5 @@
 import { createPublicClient, http } from 'viem';
-import { mainnet, base, polygon, arbitrum, optimism, bsc } from 'viem/chains';
+import { mainnet, base, baseSepolia, polygon, arbitrum, optimism, bsc } from 'viem/chains';
 import type { PublicClient, Chain } from 'viem';
 import { Connection, clusterApiUrl } from '@solana/web3.js';
 import { Horizon } from '@stellar/stellar-sdk';
@@ -11,12 +11,13 @@ const STALE_AFTER_MS = parseInt(process.env.TX_STALE_AFTER_MS ?? String(30 * 60 
 // ─── EVM ────────────────────────────────────────────────────────────────────
 
 const EVM_CHAIN_CONFIG: Record<string, { chain: Chain; rpcEnvVar: string }> = {
-  'eip155:1':    { chain: mainnet,   rpcEnvVar: 'RPC_URL_ETHEREUM' },
-  'eip155:8453': { chain: base,      rpcEnvVar: 'RPC_URL_BASE' },
-  'eip155:137':  { chain: polygon,   rpcEnvVar: 'RPC_URL_POLYGON' },
-  'eip155:42161':{ chain: arbitrum,  rpcEnvVar: 'RPC_URL_ARBITRUM' },
-  'eip155:10':   { chain: optimism,  rpcEnvVar: 'RPC_URL_OPTIMISM' },
-  'eip155:56':   { chain: bsc,       rpcEnvVar: 'RPC_URL_BSC' },
+  'eip155:1':     { chain: mainnet,     rpcEnvVar: 'RPC_URL_ETHEREUM' },
+  'eip155:8453':  { chain: base,        rpcEnvVar: 'RPC_URL_BASE' },
+  'eip155:84532': { chain: baseSepolia, rpcEnvVar: 'RPC_URL_BASE_SEPOLIA' },
+  'eip155:137':   { chain: polygon,     rpcEnvVar: 'RPC_URL_POLYGON' },
+  'eip155:42161': { chain: arbitrum,    rpcEnvVar: 'RPC_URL_ARBITRUM' },
+  'eip155:10':    { chain: optimism,    rpcEnvVar: 'RPC_URL_OPTIMISM' },
+  'eip155:56':    { chain: bsc,         rpcEnvVar: 'RPC_URL_BSC' },
 };
 
 const evmClientCache: Record<string, PublicClient> = {};

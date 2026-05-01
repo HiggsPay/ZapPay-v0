@@ -18,12 +18,15 @@ const CACHE_TTL = 30_000;
 async function getMerchantAccepts(
   supabaseAdmin: any,
   ownerId: string,
-  price: string
+  price: string,
+  supportedNetworks: Set<string>
 ): Promise<AcceptEntry[] | null> {
   const now = Date.now();
   const hit = cache.get(ownerId);
   if (hit && now - hit.cachedAt < CACHE_TTL) {
-    return hit.accepts.map(a => ({ ...a, price }));
+    return hit.accepts
+      .filter(a => supportedNetworks.size === 0 || supportedNetworks.has(a.network as string))
+      .map(a => ({ ...a, price }));
   }
 
   const [{ data: profile }, { data: configs }] = await Promise.all([
@@ -59,7 +62,12 @@ async function getMerchantAccepts(
 
   if (!accepts.length) return null;
   cache.set(ownerId, { accepts, cachedAt: now });
-  return accepts.map(a => ({ ...a, price }));
+
+  const filtered = accepts.filter(
+    a => supportedNetworks.size === 0 || supportedNetworks.has(a.network as string)
+  );
+  if (!filtered.length) return null;
+  return filtered.map(a => ({ ...a, price }));
 }
 
 export function invalidateCache(ownerId: string): void {
@@ -68,7 +76,8 @@ export function invalidateCache(ownerId: string): void {
 
 export function createCheckoutPaymentMiddleware(
   resourceServer: x402ResourceServer,
-  supabaseAdmin: any
+  supabaseAdmin: any,
+  supportedNetworks: Set<string>
 ) {
   return async (c: Context, next: Next) => {
     const checkoutId = c.req.header("X-Checkout-Id");
@@ -88,7 +97,7 @@ export function createCheckoutPaymentMiddleware(
     }
 
     const price = `$${Number(checkout.total_amount).toFixed(2)}`;
-    const accepts = await getMerchantAccepts(supabaseAdmin, checkout.owner_id, price);
+    const accepts = await getMerchantAccepts(supabaseAdmin, checkout.owner_id, price, supportedNetworks);
     if (!accepts?.length) return c.json({ error: "Merchant payment config not found" }, 500);
 
     const dynamicMiddleware = paymentMiddleware(
@@ -103,7 +112,8 @@ export function createDynamicPaymentMiddleware(
   path: string,
   price: string,
   resourceServer: x402ResourceServer,
-  supabaseAdmin: any
+  supabaseAdmin: any,
+  supportedNetworks: Set<string>
 ) {
   return async (c: Context, next: Next) => {
     const linkHash = c.req.header("X-Payment-Link") || c.req.header("x-payment-link");
@@ -129,7 +139,7 @@ export function createDynamicPaymentMiddleware(
 
     if (!ownerId) return c.json({ error: "Merchant not found" }, 500);
 
-    const accepts = await getMerchantAccepts(supabaseAdmin, ownerId, price);
+    const accepts = await getMerchantAccepts(supabaseAdmin, ownerId, price, supportedNetworks);
 
     if (!accepts?.length) {
       return c.json({

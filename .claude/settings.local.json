@@ -36,7 +36,11 @@
       "Bash(cp -r \"C:/Users/sk_16/Documents/GitHub/ZapPay-v0/.claude/skills/payment-flow\" \"C:/Users/sk_16/.claude/skills/\")",
       "Bash(grep -E '\\\\.\\(tsx|ts|json\\)$|^d')",
       "Bash(npm show *)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(curl *)",
+      "Bash(npx tsx -e ' *)",
+      "Bash(python -m json.tool)"
     ]
   }
 }

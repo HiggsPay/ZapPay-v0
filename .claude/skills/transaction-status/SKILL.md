@@ -50,7 +50,7 @@ status TEXT CHECK (status IN ('pending','processing','completed','failed','block
 | `server/middleware/walletRiskMiddleware.ts` | Writes `blocked` |
 | `server/services/confirmationPoller.ts` | Writes `completed` / `failed` via on-chain check |
 | `server/index.ts` | Route handlers write `processing`; post-settlement interceptor patches `tx_hash` |
-| `server/routes/checkout.ts` | Also writes `processing` via `recordSuccessfulPayment()` for checkout pay |
+| `server/routes/checkout.ts` | Also writes `processing` via `recordSuccessfulPayment()` for checkout pay; sets `X-Session-Id` response header so `captureSettlementData` in `index.ts` can patch `tx_hash` despite Hono sub-app context isolation |
 | `merchant-frontend/src/pages/Transactions.tsx` | UI — status cards, badge colors, label mapping |
 | `merchant-frontend/src/components/common/StatusBadge.tsx` | Badge color map |
 
