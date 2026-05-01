@@ -8,6 +8,7 @@ const MAX_ATTEMPTS = 5;
 export interface ZapPayWebhookPayload {
   event: 'transaction.confirmed';
   transaction_id: string;
+  checkout_id: string | null;
   tx_hash: string;
   network: string;
   amount: number;
@@ -43,6 +44,7 @@ function buildSignedHeaders(
 interface FullTransaction {
   id: string;
   owner_id: string;
+  checkout_id: string | null;
   payment_link_id: string | null;
   amount: number;
   currency: string;
@@ -58,7 +60,7 @@ interface FullTransaction {
 async function fetchFullTransaction(transactionId: string): Promise<FullTransaction | null> {
   const { data: tx, error: txError } = await supabaseAdmin
     .from('transactions')
-    .select('id, owner_id, payment_link_id, amount, currency, crypto_amount, crypto_currency, tx_hash, network, wallet_address, session_id')
+    .select('id, owner_id, checkout_id, payment_link_id, amount, currency, crypto_amount, crypto_currency, tx_hash, network, wallet_address, session_id')
     .eq('id', transactionId)
     .single();
 
@@ -144,6 +146,7 @@ async function deliverOnce(tx: FullTransaction): Promise<{ ok: boolean; retryabl
   const payload: ZapPayWebhookPayload = {
     event: 'transaction.confirmed',
     transaction_id: tx.id,
+    checkout_id: tx.checkout_id,
     tx_hash: tx.tx_hash,
     network: tx.network,
     amount: tx.amount,

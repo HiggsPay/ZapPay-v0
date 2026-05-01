@@ -112,6 +112,7 @@ app.post("/api/profile/webhook/test", clerkAuthMiddleware, async (c) => {
   const payload = {
     event: "transaction.confirmed",
     transaction_id: "00000000-0000-0000-0000-000000000000",
+    checkout_id: null,
     tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
     network: "eip155:84532",
     amount: 1.00,
