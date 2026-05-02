@@ -1,6 +1,6 @@
 # x402 Protocol — Multichain & Multi-Token Reference
 
-This skill documents the x402 v2 protocol's chain, token, and scheme support as researched from official sources (x402.org, github.com/coinbase/x402, docs.cdp.coinbase.com/x402).
+This skill documents the x402 v2 protocol's chain, token, and scheme support as used in ZapPay. Chains supported by ZapPay: Ethereum, Base, Polygon, Arbitrum, Optimism, BSC.
 
 Use this skill when: implementing x402 payment acceptance, configuring payment middleware for multiple chains/tokens, looking up contract addresses, or understanding which scheme handles which token type.
 
@@ -10,6 +10,8 @@ Use this skill when: implementing x402 payment acceptance, configuring payment m
 
 ### EVM (`eip155:*`) — via `@x402/evm`
 
+ZapPay supports these EVM chains:
+
 | Network | CAIP-2 | Status |
 |---|---|---|
 | Base Sepolia | `eip155:84532` | Testnet |
@@ -17,9 +19,8 @@ Use this skill when: implementing x402 payment acceptance, configuring payment m
 | Ethereum | `eip155:1` | Mainnet |
 | Polygon | `eip155:137` | Mainnet |
 | Arbitrum One | `eip155:42161` | Mainnet |
-| Scroll | `eip155:534352` | Mainnet |
-| World | `eip155:480` | Mainnet |
-| World Sepolia | `eip155:4801` | Testnet |
+| Optimism | `eip155:10` | Mainnet |
+| BSC (BNB Smart Chain) | `eip155:56` | Mainnet |
 
 **Register:** `registerExactEvmScheme(resourceServer)` from `@x402/evm/exact/server`
 
@@ -66,9 +67,13 @@ The `exact` scheme on EVM supports two transfer paths — the client auto-select
 | Ethereum | USDC | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
 | Ethereum | USDT | `0xdAC17F958D2ee523a2206206994597C13D831ec7` |
 | Polygon | USDC | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` |
+| Polygon | USDT | `0xc2132D05D31c914a87C6611C10748AEb04B58e8F` |
 | Arbitrum One | USDC | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` |
-| Scroll | USDC | `0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4` |
-| World | USDC | `0x79A02482A880bCE3F13e09Da970dC34db4CD24d1` |
+| Arbitrum One | USDT | `0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9` |
+| Optimism | USDC | `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` |
+| Optimism | USDT | `0x94b008aA00579c1307B0EF2c499aD98a8ce58e58` |
+| BSC | USDC | `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` |
+| BSC | USDT | `0x55d398326f99059fF775485246999027B3197955` |
 
 **To add any other ERC-20:** Provide its contract address as `asset` in the `accepts` entry. Permit2 handles it automatically.
 
@@ -131,29 +136,20 @@ resourceServer.register("stellar:*", new ExactStellarScheme());
 ### Dynamic multi-chain `accepts` array example
 
 ```typescript
-// Accept USDC on Base + USDT on Base + USDC on Solana mainnet
+// Accept USDC + USDT across all ZapPay-supported EVM chains
 const accepts = [
-  {
-    scheme: "exact",
-    price: "$1.00",
-    network: "eip155:8453",          // Base
-    payTo: "0xYourEvmAddress",
-    asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  // USDC
-  },
-  {
-    scheme: "exact",
-    price: "$1.00",
-    network: "eip155:8453",          // Base
-    payTo: "0xYourEvmAddress",
-    asset: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2",  // USDT (Permit2)
-  },
-  {
-    scheme: "exact",
-    price: "$1.00",
-    network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",  // Solana mainnet
-    payTo: "YourSolanaWalletBase58Address",
-    asset: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC SPL
-  },
+  { scheme: "exact", price: "$1.00", network: "eip155:8453",  payTo: "0xYourEvmAddress", asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },  // Base USDC
+  { scheme: "exact", price: "$1.00", network: "eip155:8453",  payTo: "0xYourEvmAddress", asset: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" },  // Base USDT
+  { scheme: "exact", price: "$1.00", network: "eip155:1",     payTo: "0xYourEvmAddress", asset: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" },  // Ethereum USDC
+  { scheme: "exact", price: "$1.00", network: "eip155:1",     payTo: "0xYourEvmAddress", asset: "0xdAC17F958D2ee523a2206206994597C13D831ec7" },  // Ethereum USDT
+  { scheme: "exact", price: "$1.00", network: "eip155:137",   payTo: "0xYourEvmAddress", asset: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" },  // Polygon USDC
+  { scheme: "exact", price: "$1.00", network: "eip155:137",   payTo: "0xYourEvmAddress", asset: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F" },  // Polygon USDT
+  { scheme: "exact", price: "$1.00", network: "eip155:42161", payTo: "0xYourEvmAddress", asset: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" },  // Arbitrum USDC
+  { scheme: "exact", price: "$1.00", network: "eip155:42161", payTo: "0xYourEvmAddress", asset: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9" },  // Arbitrum USDT
+  { scheme: "exact", price: "$1.00", network: "eip155:10",    payTo: "0xYourEvmAddress", asset: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85" },  // Optimism USDC
+  { scheme: "exact", price: "$1.00", network: "eip155:10",    payTo: "0xYourEvmAddress", asset: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58" },  // Optimism USDT
+  { scheme: "exact", price: "$1.00", network: "eip155:56",    payTo: "0xYourEvmAddress", asset: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" },  // BSC USDC
+  { scheme: "exact", price: "$1.00", network: "eip155:56",    payTo: "0xYourEvmAddress", asset: "0x55d398326f99059fF775485246999027B3197955" },  // BSC USDT
 ];
 ```
 
